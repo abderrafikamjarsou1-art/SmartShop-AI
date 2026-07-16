@@ -1,0 +1,14 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs",
+  "regions": ["cdg1"],
+  "buildCommand": "npx prisma migrate deploy && next build",
+  "crons": [
+    { "path": "/api/cron/recurring-expenses", "schedule": "0 3 * * *" }
+  ],
+  "functions": {
+    "src/app/api/ai/chat/route.ts": { "maxDuration": 60 },
+    "src/app/api/webhooks/stripe/route.ts": { "maxDuration": 30 },
+    "src/app/api/**/pdf/route.ts": { "maxDuration": 30 }
+  }
+}

@@ -1,0 +1,36 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: smartshop
+      POSTGRES_PASSWORD: smartshop
+      POSTGRES_DB: smartshop
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smartshop"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      # Local compose DB. Supabase/Stripe/Resend/OpenAI keys still required
+      # for auth, billing, email, and AI — supply them via an env file.
+      DATABASE_URL: "postgresql://smartshop:smartshop@db:5432/smartshop"
+      DIRECT_URL: "postgresql://smartshop:smartshop@db:5432/smartshop"
+    env_file:
+      - .env.local
+
+volumes:
+  pgdata:
