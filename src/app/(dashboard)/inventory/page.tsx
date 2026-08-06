@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { Package, Boxes, AlertTriangle, PackageX, TrendingUp, Turtle, Rabbit, Skull } from "lucide-react";
+import { Package, Boxes, AlertTriangle, PackageX, Turtle, Rabbit, Skull } from "lucide-react";
 import { requireBusiness } from "@/lib/tenant";
 import { inventoryService } from "@/services/inventory-service";
 import { formatMoney } from "@/lib/format";
-import { PageHeader, SectionHeader, StatCard, EmptyState } from "@/components/shared/page-primitives";
+import { PageHeader, SectionHeader, StatCard } from "@/components/shared/page-primitives";
 import { InventoryTabs } from "@/components/inventory/inventory-tabs";
 import { LazyInventoryTrendChart } from "@/components/charts/lazy-inventory";
 import { Card, CardContent } from "@/components/ui/card";

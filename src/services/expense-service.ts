@@ -2,7 +2,7 @@ import "server-only";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
-import { NotFoundError, ValidationError } from "@/lib/errors";
+import { NotFoundError } from "@/lib/errors";
 import type { TenantContext } from "@/lib/tenant";
 import type { ExpenseInput, ExpenseFilter } from "@/lib/validation/expense";
 

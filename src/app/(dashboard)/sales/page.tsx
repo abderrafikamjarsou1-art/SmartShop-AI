@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Banknote, CreditCard, Plus, RotateCcw, TrendingUp, Percent } from "lucide-react";
+import { Banknote, CreditCard, Plus, RotateCcw, TrendingUp } from "lucide-react";
 import { requireBusiness } from "@/lib/tenant";
 import { hasPermission } from "@/lib/permissions";
 import { saleFilterSchema } from "@/lib/validation/sale";

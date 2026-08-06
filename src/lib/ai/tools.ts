@@ -1,5 +1,5 @@
 import "server-only";
-import { z, type ZodIssue } from "zod";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { hasPermission, type Permission } from "@/lib/permissions";
@@ -49,12 +49,19 @@ interface ToolDef<S extends z.ZodTypeAny = z.ZodTypeAny> {
   handler: (ctx: TenantContext, args: z.infer<S>) => Promise<unknown>;
 }
 
-function tool<S extends z.ZodTypeAny>(def: ToolDef<S>): ToolDef<S> { return def; }
+// ToolDef<S> is invariant in S (S appears in both `schema` and, via
+// z.infer<S>, the `handler` parameter), so a heterogeneous array can't be
+// typed ToolDef<SomeConcreteSchema>[]. Each call site below is still fully
+// checked against its own concrete schema; only the return type is erased
+// to the common bound so TOOLS can hold every tool without `any`.
+function tool<S extends z.ZodTypeAny>(def: ToolDef<S>): ToolDef<z.ZodTypeAny> {
+  return def as unknown as ToolDef<z.ZodTypeAny>;
+}
 
 // Truncate big tool results before they reach the context window
 const MAX_RESULT_CHARS = 6000;
 
-export const TOOLS: ToolDef<any>[] = [
+export const TOOLS: ToolDef<z.ZodTypeAny>[] = [
   tool({
     name: "getDashboardSummary",
     description: "Today's headline numbers: sales count, gross sales, profit, margin, refunds, best sellers, cash drawer by payment method.",

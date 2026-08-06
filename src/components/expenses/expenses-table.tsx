@@ -85,7 +85,12 @@ export function ExpensesTable({ expenses, currency, canManage, trashView }: {
                       <Button variant="ghost" size="icon" aria-label="Restore expense"
                         onClick={() => start(async () => {
                           const r = await restoreExpense(e.id);
-                          r.success ? (toast.success("Expense restored."), router.refresh()) : toast.error(r.error);
+                          if (r.success) {
+                            toast.success("Expense restored.");
+                            router.refresh();
+                          } else {
+                            toast.error(r.error);
+                          }
                         })}>
                         <RotateCcw className="size-4" />
                       </Button>
@@ -109,7 +114,11 @@ export function ExpensesTable({ expenses, currency, canManage, trashView }: {
         onConfirm={async () => {
           if (!deleteTarget) return;
           const r = await deleteExpense(deleteTarget);
-          r.success ? toast.success("Expense moved to trash.") : toast.error(r.error);
+          if (r.success) {
+            toast.success("Expense moved to trash.");
+          } else {
+            toast.error(r.error);
+          }
           setDeleteTarget(null); router.refresh();
         }}
       />

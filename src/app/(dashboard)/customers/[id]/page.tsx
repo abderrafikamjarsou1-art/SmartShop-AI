@@ -4,7 +4,7 @@ import { requireBusiness } from "@/lib/tenant";
 import { customerService } from "@/services/customer-service";
 import { formatMoney } from "@/lib/format";
 import { PageHeader, SectionHeader, StatCard } from "@/components/shared/page-primitives";
-import { ActivityTimeline, ContactDrawer } from "@/components/contacts/shared";
+import { ActivityTimeline } from "@/components/contacts/shared";
 import { RecordPaymentDialog } from "@/components/customers/customers-table";
 import { EditContactButton } from "@/components/contacts/edit-button";
 import { Badge } from "@/components/ui/badge";

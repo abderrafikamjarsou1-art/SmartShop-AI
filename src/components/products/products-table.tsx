@@ -183,7 +183,11 @@ export function ProductsTable({ products, canManage, isSuperAdmin, trashView, cu
                   <>
                     <DropdownMenuItem onSelect={() => startTransition(async () => {
                       const r = await restoreProduct(p.id);
-                      r.success ? toast.success("Product restored.") : toast.error(r.error);
+                      if (r.success) {
+                        toast.success("Product restored.");
+                      } else {
+                        toast.error(r.error);
+                      }
                     })}>
                       <RotateCcw className="size-4" /> Restore
                     </DropdownMenuItem>
@@ -311,7 +315,11 @@ export function ProductsTable({ products, canManage, isSuperAdmin, trashView, cu
         onConfirm={async () => {
           if (!purgeTarget) return;
           const r = await permanentDeleteProduct(purgeTarget.id);
-          r.success ? toast.success("Product permanently deleted.") : toast.error(r.error);
+          if (r.success) {
+            toast.success("Product permanently deleted.");
+          } else {
+            toast.error(r.error);
+          }
           setPurgeTarget(null);
         }}
       />

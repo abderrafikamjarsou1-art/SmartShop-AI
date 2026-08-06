@@ -1,4 +1,4 @@
-import { Banknote, Boxes, Receipt, TrendingUp, Users, Wallet, ArrowLeftRight } from "lucide-react";
+import { Banknote, Boxes, Receipt, TrendingUp, Wallet, ArrowLeftRight } from "lucide-react";
 import { requireRole } from "@/lib/tenant";
 import { reportFilterSchema } from "@/lib/validation/expense";
 import { reportService } from "@/services/report-service";

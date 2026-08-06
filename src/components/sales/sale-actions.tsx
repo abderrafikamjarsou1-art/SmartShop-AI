@@ -11,7 +11,6 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ConfirmDialog } from "@/components/shared/interactive";
 
 interface SaleForActions {
   id: string;
@@ -50,7 +49,7 @@ export function SaleActions({ sale, currency }: { sale: SaleForActions; currency
           <DialogContent className="sm:max-w-sm">
             <DialogHeader><DialogTitle>Void this sale?</DialogTitle></DialogHeader>
             <p className="text-sm text-muted-foreground">
-              All remaining items return to stock, all payments are reversed, and the sale is marked voided. This can't be undone.
+              All remaining items return to stock, all payments are reversed, and the sale is marked voided. This can&apos;t be undone.
             </p>
             <div className="space-y-2">
               <Label htmlFor="voidReason">Reason</Label>
