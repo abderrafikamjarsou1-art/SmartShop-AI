@@ -1,6 +1,3 @@
-// =====================================================
-// fixes/rate-limit.ts  ->  src/lib/rate-limit.ts
-// =====================================================
 import { ApiError } from "@/lib/errors";
 
 /**
@@ -37,9 +34,24 @@ setInterval(() => {
   for (const [k, v] of hits) if (v.resetAt < now) hits.delete(k);
 }, 60_000).unref?.();
 
-// =====================================================
-// fixes/origin-check  ->  src/lib/origin-check.ts
-// =====================================================
+/**
+ * Best-effort client IP for rate-limit keys. Vercel/most proxies set
+ * `x-forwarded-for` as `client, proxy1, proxy2` — the first entry is the
+ * original client. Falls back to `x-real-ip`, then a constant bucket
+ * (still rate-limits, just coarsely, if no proxy header is present).
+ */
+export function getClientIp(headers: Headers): string {
+  const forwardedFor = headers.get("x-forwarded-for");
+  if (forwardedFor) {
+    const first = forwardedFor.split(",")[0]?.trim();
+    if (first) return first;
+  }
+
+  const realIp = headers.get("x-real-ip");
+  if (realIp) return realIp;
+
+  return "unknown";
+}
 
 /**
  * CSRF defense for cookie-authed MUTATING route handlers (Server Actions
