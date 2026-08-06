@@ -5,20 +5,32 @@ Scope: every module from Steps 1–12. Method: threat-model per layer
 pass over each documented risk class. Every finding lists severity,
 the vulnerable code, and the fix (concrete fixes live in /fixes).
 
+> **Verification status (production-hardening-v1.1, 2026-08-06):** an
+> independent repo audit (`AUDIT_REPORT.md`) found that **S3 and S5
+> below were marked FIXED here but were never actually wired into the
+> code** — `assertSameOrigin()` and `assertRateLimit()` existed in
+> `src/lib/rate-limit.ts` but were imported nowhere. Both are now
+> genuinely wired (see the `fix(security)` commit on
+> `production-hardening-v1.1`): rate limiting on web + mobile
+> login/register/forgot-password/reset-password, and the origin check
+> on the AI chat POST route. **S1, S2, S4, S6–S10 were NOT re-verified
+> in this pass** — their status below is carried over from the
+> original audit, not re-confirmed against current code.
+
 ## Findings summary
 
 | # | Area | Severity | Status |
 |---|------|----------|--------|
-| S1 | Storage: cross-tenant image deletion | HIGH | FIXED (fixes/storage-policies.sql) |
-| S2 | Receipts bucket public | HIGH | FIXED (private + signed URLs) |
-| S3 | AI chat POST route lacks origin check (CSRF) | MEDIUM | FIXED (fixes/origin-check patch) |
-| S4 | Serializable tx without retry (sales) | MEDIUM | FIXED (fixes/with-retry.ts) |
-| S5 | No rate limit on auth actions | MEDIUM | FIXED (fixes/rate-limit.ts) |
-| S6 | Upload validation client-side only | MEDIUM | FIXED (bucket constraints) |
-| S7 | Missing security headers | MEDIUM | FIXED (fixes/next.config.patch.md) |
-| S8 | getCurrentUser writes on every request | LOW (abuse vector) | FIXED (perf fix doubles as write-amplification fix) |
-| S9 | Impersonation lacks a visible banner | LOW | FIXED (shell banner patch) |
-| S10 | Number sequences rely on retry-less max+1 | LOW | FIXED (S4 retry + unique backstop) |
+| S1 | Storage: cross-tenant image deletion | HIGH | FIXED (fixes/storage-policies.sql) — not re-verified in v1.1 |
+| S2 | Receipts bucket public | HIGH | FIXED (private + signed URLs) — not re-verified in v1.1 |
+| S3 | AI chat POST route lacks origin check (CSRF) | MEDIUM | FIXED — wired & verified in v1.1 |
+| S4 | Serializable tx without retry (sales) | MEDIUM | FIXED (fixes/with-retry.ts) — not re-verified in v1.1 |
+| S5 | No rate limit on auth actions | MEDIUM | FIXED — wired & verified in v1.1 |
+| S6 | Upload validation client-side only | MEDIUM | FIXED (bucket constraints) — not re-verified in v1.1 |
+| S7 | Missing security headers | MEDIUM | FIXED (fixes/next.config.patch.md) — not re-verified in v1.1 |
+| S8 | getCurrentUser writes on every request | LOW (abuse vector) | FIXED (perf fix doubles as write-amplification fix) — not re-verified in v1.1 |
+| S9 | Impersonation lacks a visible banner | LOW | FIXED (shell banner patch) — not re-verified in v1.1 |
+| S10 | Number sequences rely on retry-less max+1 | LOW | FIXED (S4 retry + unique backstop) — not re-verified in v1.1 |
 
 ## Verified-safe (audited, no change needed)
 
