@@ -28,6 +28,15 @@ function nextDate(d: Date, interval: string): Date {
   return x;
 }
 
+/** Verify a supplierId belongs to the tenant before it's attached to an expense. */
+async function verifySupplierOwnership(ctx: TenantContext, supplierId: string | undefined) {
+  if (!supplierId) return;
+  const supplier = await prisma.supplier.findFirst({
+    where: { id: supplierId, businessId: ctx.businessId, deletedAt: null },
+  });
+  if (!supplier) throw new NotFoundError("Supplier");
+}
+
 export const expenseService = {
   async list(ctx: TenantContext, filter: ExpenseFilter) {
     const where: Prisma.ExpenseWhereInput = {
@@ -76,6 +85,7 @@ export const expenseService = {
   },
 
   async create(ctx: TenantContext, input: ExpenseInput) {
+    await verifySupplierOwnership(ctx, input.supplierId);
     return prisma.$transaction(async (tx) => {
       const expense = await tx.expense.create({
         data: {
@@ -105,6 +115,7 @@ export const expenseService = {
 
   async update(ctx: TenantContext, id: string, input: ExpenseInput) {
     await this.getById(ctx, id);
+    await verifySupplierOwnership(ctx, input.supplierId);
     return prisma.$transaction(async (tx) => {
       const expense = await tx.expense.update({
         where: { id },
@@ -143,6 +154,15 @@ export const expenseService = {
       await audit(tx, ctx, "expense.restore", "Expense", id);
       return restored;
     });
+  },
+
+  async getFormOptions(ctx: TenantContext) {
+    const suppliers = await prisma.supplier.findMany({
+      where: { businessId: ctx.businessId, deletedAt: null },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    });
+    return { suppliers };
   },
 
   /**

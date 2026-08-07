@@ -27,7 +27,8 @@ export const receivePurchaseSchema = z.object({
   clientRef: zUuid,
   items: z
     .array(z.object({ purchaseItemId: zUuid, quantity: z.coerce.number().int().positive() }))
-    .min(1, "Nothing to receive."),
+    .min(1, "Nothing to receive.")
+    .max(200),
   /** Optional: copy this receipt's unit costs onto Product.buyingPrice */
   updateProductCost: z.coerce.boolean().default(false),
   notes: z.string().trim().max(300).optional(),
@@ -39,7 +40,8 @@ export const purchaseReturnSchema = z.object({
   purchaseId: zUuid,
   items: z
     .array(z.object({ purchaseItemId: zUuid, quantity: z.coerce.number().int().positive() }))
-    .min(1, "Select at least one item."),
+    .min(1, "Select at least one item.")
+    .max(200),
   reason: zRequiredString("Reason", 200),
 });
 export type PurchaseReturnInput = z.infer<typeof purchaseReturnSchema>;

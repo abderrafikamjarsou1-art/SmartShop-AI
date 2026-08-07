@@ -3,8 +3,8 @@
 import { requireRole } from "@/lib/tenant";
 import { safeAction, type ActionResult } from "@/lib/safe-action";
 import { zParse, zUuid } from "@/lib/validation";
+import { aiInsightKindSchema } from "@/lib/validation/ai";
 import { aiService } from "@/services/ai-service";
-import { z } from "zod";
 
 export async function createAiConversation(): Promise<ActionResult<{ id: string }>> {
   return safeAction("ai.createConversation", async () => {
@@ -22,15 +22,10 @@ export async function deleteAiConversation(id: string): Promise<ActionResult<{ i
   });
 }
 
-const insightSchema = z.enum([
-  "weekly", "monthly", "profit", "loss", "growth",
-  "inventory", "expenses", "customers", "suppliers",
-]);
-
 /** One-click insights = a canned prompt for the chat pipeline. */
 export async function getInsightPrompt(kind: string): Promise<ActionResult<{ prompt: string }>> {
   return safeAction("ai.insightPrompt", async () => {
     await requireRole("ai:use");
-    return { prompt: aiService.insightPrompt(zParse(insightSchema, kind)) };
+    return { prompt: aiService.insightPrompt(zParse(aiInsightKindSchema, kind)) };
   });
 }

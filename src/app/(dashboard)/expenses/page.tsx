@@ -53,6 +53,7 @@ export default async function ExpensesPage({
         currency={currency}
         canManage={canManage}
         trashView={filter.deleted}
+        businessId={ctx.businessId}
       />
       <Pagination page={page} totalPages={totalPages} />
     </>

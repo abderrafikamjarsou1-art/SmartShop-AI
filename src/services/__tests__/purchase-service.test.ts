@@ -38,7 +38,7 @@ vi.mock("@/lib/prisma", () => {
 
 import { prisma } from "@/lib/prisma";
 import { purchaseService } from "@/services/purchase-service";
-import { ValidationError, ConflictError } from "@/lib/errors";
+import { ValidationError, ConflictError, NotFoundError } from "@/lib/errors";
 import type { TenantContext } from "@/lib/tenant";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -119,6 +119,27 @@ describe("purchaseService.receive — partial receiving", () => {
     ).rejects.toThrow(/still expected/);
   });
 
+  it("regression (C2): a duplicate purchaseItemId within one request can't over-receive", async () => {
+    // Only 5 remain open on the line; the same line appears twice
+    // requesting 5 each — the SUM (10) must be rejected, not each
+    // individual entry checked against a stale snapshot.
+    mocked.purchase.findFirst.mockResolvedValue(poWith([{ quantity: 10, receivedQuantity: 5 }]));
+
+    await expect(
+      purchaseService.receive(ctx, {
+        purchaseId: "po1", clientRef: CREF,
+        items: [
+          { purchaseItemId: "pi0", quantity: 5 },
+          { purchaseItemId: "pi0", quantity: 5 },
+        ],
+        updateProductCost: false,
+      })
+    ).rejects.toThrow(ValidationError);
+
+    expect(tx.purchaseItem.update).not.toHaveBeenCalled();
+    expect(tx.product.update).not.toHaveBeenCalled();
+  });
+
   it("partial receive -> PARTIALLY_RECEIVED with a PURCHASE movement mirroring the increment", async () => {
     mocked.purchase.findFirst.mockResolvedValue(poWith([{ quantity: 10 }]));
     tx.purchaseItem.findMany.mockResolvedValue([{ quantity: 10, receivedQuantity: 4 }]);
@@ -167,6 +188,26 @@ describe("purchaseService.processReturn", () => {
     ).rejects.toThrow(/can be returned/);
   });
 
+  it("regression (C2): a duplicate purchaseItemId within one request can't over-return", async () => {
+    // Only 3 units are returnable; the same line appears twice requesting
+    // 2 each — the SUM (4) must be rejected, not each entry checked
+    // against a stale snapshot.
+    mocked.purchase.findFirst.mockResolvedValue(poWith([{ receivedQuantity: 3, returnedQuantity: 0 }]));
+    tx.product.updateMany.mockResolvedValue({ count: 1 });
+    tx.product.findUniqueOrThrow.mockResolvedValue({ id: "p0", name: "Product 0", quantity: 5, minimumStock: 2 });
+
+    await expect(
+      purchaseService.processReturn(ctx, {
+        purchaseId: "po1",
+        items: [
+          { purchaseItemId: "pi0", quantity: 2 },
+          { purchaseItemId: "pi0", quantity: 2 },
+        ],
+        reason: "damaged",
+      })
+    ).rejects.toThrow(ValidationError);
+  });
+
   it("uses a stock guard: can't ship back units already sold", async () => {
     mocked.purchase.findFirst.mockResolvedValue(poWith([{ receivedQuantity: 5 }]));
     tx.product.updateMany.mockResolvedValue({ count: 0 }); // stock < return qty
@@ -188,6 +229,84 @@ describe("purchaseService.processReturn", () => {
 
     expect(tx.inventoryMovement.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ type: "RETURN", quantity: -2 }) })
+    );
+  });
+});
+
+describe("purchaseService.updateDraft — tenant ownership (regression: C1 cross-tenant IDOR)", () => {
+  it("rejects a supplierId that doesn't belong to the tenant", async () => {
+    mocked.purchase.findFirst.mockResolvedValue({ ...poWith([{}]), status: "DRAFT" });
+    mocked.supplier.findFirst.mockResolvedValue(null); // not found for this tenant
+
+    await expect(
+      purchaseService.updateDraft(ctx, {
+        id: "po1", supplierId: "someone-elses-supplier",
+        items: [{ productId: "p0", quantity: 5, unitCost: 10 }],
+      })
+    ).rejects.toThrow(NotFoundError);
+
+    expect(tx.purchase.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects a productId that doesn't belong to the tenant", async () => {
+    mocked.purchase.findFirst.mockResolvedValue({ ...poWith([{}]), status: "DRAFT" });
+    mocked.supplier.findFirst.mockResolvedValue({ id: "sup1", name: "TechDistrib" });
+    mocked.product.findMany.mockResolvedValue([]); // the productId isn't this tenant's
+
+    await expect(
+      purchaseService.updateDraft(ctx, {
+        id: "po1", supplierId: "sup1",
+        items: [{ productId: "someone-elses-product", quantity: 5, unitCost: 10 }],
+      })
+    ).rejects.toThrow(NotFoundError);
+
+    expect(tx.purchase.update).not.toHaveBeenCalled();
+  });
+
+  it("allows the update once supplier and products are verified tenant-owned", async () => {
+    mocked.purchase.findFirst.mockResolvedValue({ ...poWith([{}]), status: "DRAFT" });
+    mocked.supplier.findFirst.mockResolvedValue({ id: "sup1", name: "TechDistrib" });
+    mocked.product.findMany.mockResolvedValue([{ id: "p0" }]);
+    tx.purchase.update.mockResolvedValue({ id: "po1", status: "DRAFT" });
+
+    await purchaseService.updateDraft(ctx, {
+      id: "po1", supplierId: "sup1",
+      items: [{ productId: "p0", quantity: 5, unitCost: 10 }],
+    });
+
+    expect(tx.purchase.update).toHaveBeenCalled();
+  });
+});
+
+describe("purchaseService.receive / processReturn — businessId scoping on product writes (defense-in-depth for C1)", () => {
+  it("receive() filters the product update by businessId, not id alone", async () => {
+    mocked.purchase.findFirst.mockResolvedValue(poWith([{ quantity: 10 }]));
+    tx.purchaseItem.findMany.mockResolvedValue([{ quantity: 10, receivedQuantity: 4 }]);
+
+    await purchaseService.receive(ctx, {
+      purchaseId: "po1", clientRef: CREF,
+      items: [{ purchaseItemId: "pi0", quantity: 4 }], updateProductCost: false,
+    });
+
+    expect(tx.product.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ businessId: "biz-1" }) })
+    );
+  });
+
+  it("processReturn() filters both product writes by businessId, not id alone", async () => {
+    mocked.purchase.findFirst.mockResolvedValue(poWith([{ receivedQuantity: 5 }]));
+    tx.product.updateMany.mockResolvedValue({ count: 1 });
+    tx.product.findUniqueOrThrow.mockResolvedValue({ id: "p0", name: "Product 0", quantity: 3, minimumStock: 2 });
+
+    await purchaseService.processReturn(ctx, {
+      purchaseId: "po1", items: [{ purchaseItemId: "pi0", quantity: 2 }], reason: "damaged",
+    });
+
+    expect(tx.product.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ businessId: "biz-1" }) })
+    );
+    expect(tx.product.findUniqueOrThrow).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ businessId: "biz-1" }) })
     );
   });
 });

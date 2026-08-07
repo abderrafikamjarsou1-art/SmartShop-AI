@@ -1,9 +1,11 @@
 import "server-only";
 import { cache } from "react";
+import { headers } from "next/headers";
 import type { User } from "@prisma/client";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { UnauthorizedError } from "@/lib/errors";
+import { extractBearerToken, getUserFromBearerToken } from "@/lib/auth-bearer";
 
 /**
  * Auth layer — the ONLY place that talks to Supabase Auth on the server.
@@ -11,10 +13,24 @@ import { UnauthorizedError } from "@/lib/errors";
  *
  * React cache() memoizes per-request: calling requireAuth() in a layout,
  * a page and three actions costs ONE Supabase verification per request.
+ *
+ * Dual transport: the web app never sends an Authorization header, so it
+ * always falls through to the existing cookie flow below, unchanged. The
+ * mobile app has no cookies and sends `Authorization: Bearer <token>`
+ * instead — when present, it takes priority and short-circuits before any
+ * cookie/Supabase-SSR code runs.
  */
 
 /** Returns the app User (Prisma) for the current session, or null for guests. */
 export const getCurrentUser = cache(async (): Promise<User | null> => {
+  const headerList = await headers();
+  const bearerToken = extractBearerToken(headerList.get("authorization"));
+
+  if (bearerToken) {
+    // Mobile client. Never touches cookies — invalid/expired token = guest.
+    return getUserFromBearerToken(bearerToken);
+  }
+
   const supabase = await createClient();
 
   // getUser() validates the JWT server-side — never trust getSession() alone.

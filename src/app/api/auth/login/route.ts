@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
-import { assertRateLimit, getClientIp, TooManyRequestsError } from "@/lib/rate-limit";
+import { assertRateLimit, getClientIp, rejectForgedOrigin } from "@/lib/rate-limit";
+import { isApiError } from "@/lib/errors";
 
 type LoginBody = {
   email?: unknown;
@@ -10,6 +11,8 @@ type LoginBody = {
 
 export async function POST(request: Request) {
   try {
+    rejectForgedOrigin(request);
+
     const body = (await request.json()) as LoginBody;
 
     const email =
@@ -136,7 +139,7 @@ export async function POST(request: Request) {
       { status: 200 }
     );
   } catch (error) {
-    if (error instanceof TooManyRequestsError) {
+    if (isApiError(error)) {
       return NextResponse.json({ message: error.message }, { status: error.statusCode });
     }
 

@@ -29,8 +29,8 @@ export interface ExpenseRow {
 }
 
 // ---------- Table ----------
-export function ExpensesTable({ expenses, currency, canManage, trashView }: {
-  expenses: ExpenseRow[]; currency: string; canManage: boolean; trashView: boolean;
+export function ExpensesTable({ expenses, currency, canManage, trashView, businessId }: {
+  expenses: ExpenseRow[]; currency: string; canManage: boolean; trashView: boolean; businessId: string;
 }) {
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [editTarget, setEditTarget] = useState<ExpenseRow | null>(null);
@@ -123,7 +123,7 @@ export function ExpensesTable({ expenses, currency, canManage, trashView }: {
         }}
       />
       {editTarget && (
-        <ExpenseDrawerTrigger expense={editTarget} open onOpenChange={(o) => !o && setEditTarget(null)} />
+        <ExpenseDrawerTrigger expense={editTarget} open onOpenChange={(o) => !o && setEditTarget(null)} businessId={businessId} />
       )}
     </>
   );
@@ -173,8 +173,8 @@ export function ExpensesToolbar() {
 }
 
 // ---------- Drawer (create/edit) ----------
-export function ExpenseDrawerTrigger({ expense, label, open, onOpenChange }: {
-  expense?: ExpenseRow; label?: ReactNode; open?: boolean; onOpenChange?: (o: boolean) => void;
+export function ExpenseDrawerTrigger({ expense, label, open, onOpenChange, businessId }: {
+  expense?: ExpenseRow; label?: ReactNode; open?: boolean; onOpenChange?: (o: boolean) => void; businessId: string;
 }) {
   const isEdit = !!expense;
   const controlled = open !== undefined;
@@ -206,7 +206,10 @@ export function ExpenseDrawerTrigger({ expense, label, open, onOpenChange }: {
       if (!["image/jpeg", "image/png", "image/webp", "application/pdf"].includes(file.type)) {
         toast.error(`${file.name}: images or PDF only.`); continue;
       }
-      const path = `${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, "_")}`;
+      // Tenant-scoped path — required by the storage RLS policy (see
+      // prisma/storage-policies.sql), which authorizes writes/reads by
+      // the first path segment matching the caller's businessId.
+      const path = `${businessId}/${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, "_")}`;
       const { error } = await supabase.storage.from("receipts").upload(path, file);
       if (error) toast.error(`${file.name}: upload failed.`);
       else setAttachments((a) => [...a, {

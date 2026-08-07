@@ -42,24 +42,33 @@ function computePurchaseTotals(items: { quantity: number; unitCost: number }[]) 
   return { subtotal, total: subtotal }; // supplier tax handling arrives with Expenses/VAT step
 }
 
+/**
+ * Verify a supplierId + a set of productIds all belong to the tenant
+ * before they're written onto a purchase order. Shared by create() and
+ * updateDraft() — a client-supplied id is never trusted without this.
+ */
+async function verifyPurchaseOwnership(ctx: TenantContext, supplierId: string, productIds: string[]) {
+  const supplier = await prisma.supplier.findFirst({
+    where: { id: supplierId, businessId: ctx.businessId, deletedAt: null },
+  });
+  if (!supplier) throw new NotFoundError("Supplier");
+
+  const products = await prisma.product.findMany({
+    where: { id: { in: productIds }, businessId: ctx.businessId, deletedAt: null },
+    select: { id: true },
+  });
+  if (products.length !== new Set(productIds).size) {
+    throw new NotFoundError("Product");
+  }
+  return supplier;
+}
+
 export const purchaseService = {
   // ---------------------------------------------------------------
   // CREATE / DRAFT / SEND / CANCEL
   // ---------------------------------------------------------------
   async create(ctx: TenantContext, input: CreatePurchaseInput) {
-    // Verify supplier + products belong to the tenant
-    const supplier = await prisma.supplier.findFirst({
-      where: { id: input.supplierId, businessId: ctx.businessId, deletedAt: null },
-    });
-    if (!supplier) throw new NotFoundError("Supplier");
-
-    const products = await prisma.product.findMany({
-      where: { id: { in: input.items.map((i) => i.productId) }, businessId: ctx.businessId, deletedAt: null },
-      select: { id: true },
-    });
-    if (products.length !== new Set(input.items.map((i) => i.productId)).size) {
-      throw new NotFoundError("Product");
-    }
+    const supplier = await verifyPurchaseOwnership(ctx, input.supplierId, input.items.map((i) => i.productId));
 
     const totals = computePurchaseTotals(input.items);
 
@@ -104,6 +113,10 @@ export const purchaseService = {
   async updateDraft(ctx: TenantContext, input: UpdateDraftPurchaseInput) {
     const purchase = await this.getById(ctx, input.id);
     if (purchase.status !== "DRAFT") throw new ValidationError("Only draft purchase orders can be edited.");
+
+    // Same ownership guard as create() — a draft edit can't smuggle in
+    // another tenant's supplier/products.
+    await verifyPurchaseOwnership(ctx, input.supplierId, input.items.map((i) => i.productId));
 
     const totals = computePurchaseTotals(input.items);
     return prisma.$transaction(async (tx) => {
@@ -173,12 +186,18 @@ export const purchaseService = {
     }
     const byId = new Map(purchase.items.map((i) => [i.id, i]));
 
-    // Pre-flight: never receive more than what remains open on a line
+    // Pre-flight: never receive more than what remains open on a line.
+    // Tracks a running total per line — input.items can repeat the same
+    // purchaseItemId, and checking each entry against the same static
+    // "remaining" snapshot would let duplicate lines over-receive.
+    const requestedByLine = new Map<string, number>();
     for (const r of input.items) {
       const item = byId.get(r.purchaseItemId);
       if (!item) throw new NotFoundError("Purchase line");
       const remaining = item.quantity - item.receivedQuantity;
-      if (r.quantity > remaining) {
+      const requestedSoFar = (requestedByLine.get(r.purchaseItemId) ?? 0) + r.quantity;
+      requestedByLine.set(r.purchaseItemId, requestedSoFar);
+      if (requestedSoFar > remaining) {
         throw new ValidationError(`Only ${remaining} unit(s) of “${item.product.name}” are still expected.`);
       }
     }
@@ -207,7 +226,7 @@ export const purchaseService = {
           });
 
           const product = await tx.product.update({
-            where: { id: item.productId },
+            where: { id: item.productId, businessId: ctx.businessId },
             data: {
               quantity: { increment: r.quantity },
               // OPTIONAL cost update: copy the PO's negotiated cost onto the
@@ -279,19 +298,25 @@ export const purchaseService = {
   async processReturn(ctx: TenantContext, input: PurchaseReturnInput) {
     const purchase = await this.getById(ctx, input.purchaseId);
     const byId = new Map(purchase.items.map((i) => [i.id, i]));
+    // Running total per line — same reasoning as receive()'s pre-flight:
+    // a repeated purchaseItemId within one request must not be able to
+    // over-return by validating each entry against a stale snapshot.
+    const returnedInThisRequest = new Map<string, number>();
 
     return prisma.$transaction(async (tx) => {
       for (const r of input.items) {
         const item = byId.get(r.purchaseItemId);
         if (!item) throw new NotFoundError("Purchase line");
         const returnable = item.receivedQuantity - item.returnedQuantity;
-        if (r.quantity > returnable) {
+        const requestedSoFar = (returnedInThisRequest.get(r.purchaseItemId) ?? 0) + r.quantity;
+        returnedInThisRequest.set(r.purchaseItemId, requestedSoFar);
+        if (requestedSoFar > returnable) {
           throw new ValidationError(`Only ${returnable} received unit(s) of “${item.product.name}” can be returned.`);
         }
 
         // Stock guard: we can't ship back units already sold
         const guarded = await tx.product.updateMany({
-          where: { id: item.productId, quantity: { gte: r.quantity } },
+          where: { id: item.productId, businessId: ctx.businessId, quantity: { gte: r.quantity } },
           data: { quantity: { decrement: r.quantity } },
         });
         if (guarded.count === 0) {
@@ -303,7 +328,7 @@ export const purchaseService = {
           data: { returnedQuantity: { increment: r.quantity } },
         });
 
-        const product = await tx.product.findUniqueOrThrow({ where: { id: item.productId } });
+        const product = await tx.product.findUniqueOrThrow({ where: { id: item.productId, businessId: ctx.businessId } });
         await tx.inventoryMovement.create({
           data: {
             businessId: ctx.businessId,

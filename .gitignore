@@ -12,3 +12,9 @@ coverage/
 playwright-report/
 test-results/
 /prisma/*.db
+*.zip
+*.tsbuildinfo
+android/build/
+android/app/build/
+android/**/*.apk
+android/**/*.aab

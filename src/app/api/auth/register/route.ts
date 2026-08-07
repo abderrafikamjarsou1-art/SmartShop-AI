@@ -4,7 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { zEmail, zPassword, zRequiredString } from "@/lib/validation";
 import { z } from "zod";
 import { logger } from "@/lib/logger";
-import { assertRateLimit, getClientIp, TooManyRequestsError } from "@/lib/rate-limit";
+import { assertRateLimit, getClientIp, rejectForgedOrigin, TooManyRequestsError } from "@/lib/rate-limit";
+import { isApiError } from "@/lib/errors";
 
 /**
  * POST /api/auth/register
@@ -24,6 +25,15 @@ const registerBodySchema = z.object({
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL;
 
 export async function POST(request: Request) {
+  try {
+    rejectForgedOrigin(request);
+  } catch (error) {
+    if (isApiError(error)) {
+      return NextResponse.json({ message: error.message }, { status: error.statusCode });
+    }
+    throw error;
+  }
+
   let body: unknown;
 
   try {
