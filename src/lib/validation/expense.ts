@@ -69,7 +69,7 @@ export const reportFilterSchema = reportPeriodSchema.and(z.object({
 export type ReportFilter = z.infer<typeof reportFilterSchema>;
 
 export const reportExportSchema = z.object({
-  report: z.enum(["financial-summary", "top-products", "top-customers", "sales-by-employee", "payment-methods", "refunds", "purchases", "expenses"]),
+  report: z.enum(["financial-summary", "top-products", "top-customers", "sales-by-employee", "payment-methods", "refunds", "purchases", "expenses", "low-stock", "inventory-valuation"]),
   format: z.enum(["csv", "xlsx", "pdf"]).default("csv"),
   preset: z.enum(["daily", "weekly", "monthly", "quarterly", "yearly", "custom"]).default("monthly"),
   from: z.coerce.date().optional(),

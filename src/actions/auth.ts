@@ -1,5 +1,6 @@
 "use server";
 
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { safeAction, type ActionResult } from "@/lib/safe-action";
@@ -12,8 +13,14 @@ import {
 } from "@/lib/validation";
 import { ValidationError } from "@/lib/errors";
 import { logger } from "@/lib/logger";
+import { assertRateLimit, getClientIp } from "@/lib/rate-limit";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL!;
+
+/** Resolves the caller's IP for rate-limit keys from the current request headers. */
+async function clientIp(): Promise<string> {
+  return getClientIp(await headers());
+}
 
 /**
  * Auth Server Actions.
@@ -25,6 +32,10 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL!;
 // ---------- Login (email/password) ----------
 export async function login(_prev: unknown, formData: FormData): Promise<ActionResult<never>> {
   const result = await safeAction("auth.login", async () => {
+    const ip = await clientIp();
+    const rawEmail = String(formData.get("email") ?? "").trim().toLowerCase();
+    assertRateLimit(`login:${ip}:${rawEmail}`, 10, 60_000);
+
     const { email, password } = zParseFormData(loginSchema, formData);
     const supabase = await createClient();
 
@@ -42,6 +53,9 @@ export async function login(_prev: unknown, formData: FormData): Promise<ActionR
 // ---------- Register ----------
 export async function register(_prev: unknown, formData: FormData): Promise<ActionResult<{ needsVerification: boolean }>> {
   return safeAction("auth.register", async () => {
+    const ip = await clientIp();
+    assertRateLimit(`register:${ip}`, 5, 15 * 60_000);
+
     const { fullName, email, password } = zParseFormData(registerSchema, formData);
     const supabase = await createClient();
 
@@ -86,6 +100,10 @@ export async function loginWithGoogle(): Promise<never | ActionResult<never>> {
 // ---------- Forgot password ----------
 export async function forgotPassword(_prev: unknown, formData: FormData): Promise<ActionResult<{ sent: true }>> {
   return safeAction("auth.forgotPassword", async () => {
+    const ip = await clientIp();
+    const rawEmail = String(formData.get("email") ?? "").trim().toLowerCase();
+    assertRateLimit(`forgot-password:${ip}:${rawEmail}`, 5, 60_000);
+
     const { email } = zParseFormData(forgotPasswordSchema, formData);
     const supabase = await createClient();
 
@@ -101,6 +119,9 @@ export async function forgotPassword(_prev: unknown, formData: FormData): Promis
 // ---------- Reset password (user arrives via email link, session already set) ----------
 export async function resetPassword(_prev: unknown, formData: FormData): Promise<ActionResult<never>> {
   const result = await safeAction("auth.resetPassword", async () => {
+    const ip = await clientIp();
+    assertRateLimit(`reset-password:${ip}`, 10, 60_000);
+
     const { password } = zParseFormData(resetPasswordSchema, formData);
     const supabase = await createClient();
 

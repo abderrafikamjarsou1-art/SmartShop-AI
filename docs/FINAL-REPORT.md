@@ -73,6 +73,19 @@ PII-scrubbed logs.
 
 ## Scorecard
 
+> **Status (production-hardening-v1.1, 2026-08-06):** an independent
+> repo audit (`AUDIT_REPORT.md`) found this scorecard overstated
+> several rows against what was actually in the code — see
+> `PRODUCTION_HARDENING_REPORT.md` for the full before/after. In short:
+> "CI gates" didn't exist (Maintainability row) — a CI workflow now
+> does, covering lint/typecheck/test/build/prisma validate; "Sentry +
+> OTel" didn't exist (Observability row) — still doesn't, it's
+> PLANNED, only structured logging + health checks are real; the
+> "~89%" test coverage figure (Test coverage row) was never measured by
+> any coverage tool. The audit's own estimate as of that pass was
+> 6.5/10 overall, not 9/10 — treat the numbers below as the original
+> team's aspirational self-assessment, not a verified score.
+
 Scores are the team's honest self-assessment against a "could this run
 real shops on real money" bar, with the reasoning stated so they're not
 just numbers.

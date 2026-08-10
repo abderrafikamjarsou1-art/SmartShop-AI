@@ -5,7 +5,7 @@ import { requireRole } from "@/lib/tenant";
 import { safeAction, type ActionResult } from "@/lib/safe-action";
 import { zParse } from "@/lib/validation";
 import {
-  createSaleSchema, updateDraftSchema, returnSchema, saleFilterSchema, posSearchSchema,
+  createSaleSchema, updateDraftSchema, returnSchema, posSearchSchema,
 } from "@/lib/validation/sale";
 import { saleService } from "@/services/sale-service";
 import { z } from "zod";

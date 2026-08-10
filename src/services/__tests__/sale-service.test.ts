@@ -25,7 +25,7 @@ vi.mock("@/lib/prisma", () => {
       sale: { findFirst: vi.fn(), findMany: vi.fn(), count: vi.fn(), aggregate: vi.fn() },
       product: { findMany: vi.fn(), findFirst: vi.fn() },
       customer: { findMany: vi.fn() },
-      $transaction: vi.fn(async (arg: unknown, _opts?: unknown) =>
+      $transaction: vi.fn(async (arg: unknown) =>
         typeof arg === "function" ? (arg as (t: typeof tx) => unknown)(tx) : Promise.all(arg as Promise<unknown>[])
       ),
       $queryRaw: vi.fn().mockResolvedValue([]),

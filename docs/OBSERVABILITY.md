@@ -1,6 +1,19 @@
 # PHASE 4 — OBSERVABILITY
 
-## 1. Sentry (errors + performance)
+> **Status (production-hardening-v1.1, 2026-08-06):** this document
+> reads as a build log ("Our additions:") but `AUDIT_REPORT.md` found
+> **Sentry is PLANNED, not implemented** — there is no `@sentry/*`
+> package anywhere in `package.json` and no `sentry.*.config.ts` /
+> `instrumentation.ts` files in this repo. The code sample below is a
+> spec for future work, not something running today.
+>
+> **Actually implemented today:** the structured JSON logger
+> (`src/lib/logger.ts` — pretty console output in dev, single-line JSON
+> in prod for log-drain ingestion) and the unauthenticated `/api/health`
+> endpoint. That's the full extent of production observability as of
+> this pass — no error tracking, no tracing, no dashboards.
+
+## 1. Sentry (errors + performance) — PLANNED, NOT IMPLEMENTED
 
 ```bash
 npx @sentry/wizard@latest -i nextjs

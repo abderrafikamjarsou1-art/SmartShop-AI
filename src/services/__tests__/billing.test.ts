@@ -7,21 +7,26 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-const db = {
-  subscription: { findUnique: vi.fn(), update: vi.fn(), count: vi.fn(), findMany: vi.fn() },
-  product: { count: vi.fn() },
-  customer: { count: vi.fn() },
-  supplier: { count: vi.fn() },
-  sale: { count: vi.fn() },
-  invoice: { count: vi.fn() },
-  aiMessage: { count: vi.fn() },
-  usageCounter: { findUnique: vi.fn(), upsert: vi.fn() },
-  webhookEvent: { create: vi.fn(), delete: vi.fn() },
-  auditLog: { create: vi.fn() },
-  $transaction: vi.fn(async (arg: unknown) =>
-    typeof arg === "function" ? (arg as (t: typeof db) => unknown)(db) : Promise.all(arg as Promise<unknown>[])),
-};
-vi.mock("@/lib/prisma", () => ({ prisma: db }));
+// The mock object must be built INSIDE the vi.mock factory (Vitest hoists
+// vi.mock calls above top-level const/let, so a `db` declared outside and
+// referenced from the factory would be read before its own initialization).
+vi.mock("@/lib/prisma", () => {
+  const db = {
+    subscription: { findUnique: vi.fn(), update: vi.fn(), count: vi.fn(), findMany: vi.fn() },
+    product: { count: vi.fn() },
+    customer: { count: vi.fn() },
+    supplier: { count: vi.fn() },
+    sale: { count: vi.fn() },
+    invoice: { count: vi.fn() },
+    aiMessage: { count: vi.fn() },
+    usageCounter: { findUnique: vi.fn(), upsert: vi.fn() },
+    webhookEvent: { create: vi.fn(), delete: vi.fn() },
+    auditLog: { create: vi.fn() },
+    $transaction: vi.fn(async (arg: unknown) =>
+      typeof arg === "function" ? (arg as (t: typeof db) => unknown)(db) : Promise.all(arg as Promise<unknown>[])),
+  };
+  return { prisma: db };
+});
 
 const stripeMock = {
   subscriptions: { retrieve: vi.fn(), update: vi.fn() },
@@ -32,10 +37,14 @@ const stripeMock = {
 vi.mock("@/lib/billing/stripe", () => ({ stripe: () => stripeMock }));
 vi.mock("@/lib/billing/emails", () => ({ sendBillingEmail: vi.fn() }));
 
+import { prisma } from "@/lib/prisma";
 import { entitlementService, FeatureLockedError, QuotaExceededError } from "@/services/entitlement-service";
 import { billingService } from "@/services/billing-service";
 import type { TenantContext } from "@/lib/tenant";
 import type Stripe from "stripe";
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const db = prisma as any;
 
 const ctx = {
   businessId: "biz-1", role: "OWNER",
@@ -119,8 +128,9 @@ describe("quotas", () => {
 describe("subscription sync (Stripe -> local read model)", () => {
   const stripeSub = (over: Partial<Stripe.Subscription> = {}) => ({
     id: "sub_1", status: "active", cancel_at_period_end: false, trial_end: null,
+    current_period_end: 1893456000,
     metadata: { businessId: "biz-1" },
-    items: { data: [{ price: { id: "price_pro_m" }, current_period_end: 1893456000 }] },
+    items: { data: [{ price: { id: "price_pro_m" } }] },
     ...over,
   }) as unknown as Stripe.Subscription;
 
@@ -150,6 +160,15 @@ describe("subscription sync (Stripe -> local read model)", () => {
     );
   });
 
+  it("maps current_period_end (top-level Stripe field) to a local Date", async () => {
+    await billingService.syncFromStripe(stripeSub({ current_period_end: 1893456000 } as unknown as Partial<Stripe.Subscription>));
+    expect(db.subscription.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ currentPeriodEnd: new Date(1893456000 * 1000) }),
+      })
+    );
+  });
+
   it("ignores subscriptions without businessId metadata (no crash, no write)", async () => {
     await billingService.syncFromStripe(stripeSub({ metadata: {} } as Partial<Stripe.Subscription>));
     expect(db.subscription.update).not.toHaveBeenCalled();
@@ -161,8 +180,9 @@ describe("cancel / resume", () => {
     db.subscription.findUnique.mockResolvedValue({ id: "s1", stripeSubscriptionId: "sub_1" });
     stripeMock.subscriptions.update.mockResolvedValue({
       id: "sub_1", status: "active", cancel_at_period_end: true, trial_end: null,
+      current_period_end: 1893456000,
       metadata: { businessId: "biz-1" },
-      items: { data: [{ price: { id: "price_pro_m" }, current_period_end: 1893456000 }] },
+      items: { data: [{ price: { id: "price_pro_m" } }] },
     });
   });
 

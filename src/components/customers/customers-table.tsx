@@ -68,7 +68,11 @@ export function CustomersTable({ customers, currency, trashView }: {
                     <Button variant="ghost" size="icon" aria-label={`Restore ${c.name}`}
                       onClick={() => start(async () => {
                         const r = await restoreCustomer(c.id);
-                        r.success ? toast.success("Customer restored.") : toast.error(r.error);
+                        if (r.success) {
+                          toast.success("Customer restored.");
+                        } else {
+                          toast.error(r.error);
+                        }
                       })}>
                       <RotateCcw className="size-4" />
                     </Button>
@@ -91,7 +95,11 @@ export function CustomersTable({ customers, currency, trashView }: {
         onConfirm={async () => {
           if (!deleteTarget) return;
           const r = await deleteCustomer(deleteTarget.id);
-          r.success ? toast.success("Customer moved to trash.") : toast.error(r.error);
+          if (r.success) {
+            toast.success("Customer moved to trash.");
+          } else {
+            toast.error(r.error);
+          }
           setDeleteTarget(null);
         }}
       />

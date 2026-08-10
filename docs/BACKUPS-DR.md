@@ -1,5 +1,23 @@
 # PHASE 5 — BACKUPS & DISASTER RECOVERY
 
+> **Status (production-hardening-v1.1, 2026-08-06):** `AUDIT_REPORT.md`
+> found **no `.github/workflows/` directory existed at all** (a
+> production CI workflow was added in this pass, but it runs
+> lint/typecheck/test/build — it does not do backups). The weekly
+> offsite-backup GitHub Action described below is **PLANNED, NOT
+> IMPLEMENTED** — `backup.yml` does not exist.
+>
+> **Externally configured, not verifiable from this repo:** the
+> "Automatic (Supabase)" daily snapshots and PITR below are Supabase
+> platform features controlled in the Supabase dashboard, not in this
+> codebase — whether they're actually enabled on the project's current
+> plan/tier cannot be confirmed by reading the repo. Verify directly in
+> Settings → Database before relying on either.
+>
+> **Actually implemented today:** nothing in-repo. Recovery currently
+> depends entirely on whatever Supabase's own retention is configured
+> to, unless PITR has been separately enabled.
+
 ## Objectives
 RPO (max data loss): 24h baseline, ~2min with PITR (recommended at
 launch on the Pro plan). RTO (max downtime): < 2 hours, drilled below.

@@ -41,7 +41,11 @@ export function BillingActions({ plan, hasStripeSubscription, cancelAtPeriodEnd 
         cancelAtPeriodEnd ? (
           <Button variant="outline" disabled={pending} onClick={() => start(async () => {
             const r = await resumeSubscription();
-            r.success ? toast.success("Subscription resumed.") : toast.error(r.error);
+            if (r.success) {
+              toast.success("Subscription resumed.");
+            } else {
+              toast.error(r.error);
+            }
           })}>
             <RotateCcw className="size-4" aria-hidden /> Resume subscription
           </Button>
@@ -57,7 +61,11 @@ export function BillingActions({ plan, hasStripeSubscription, cancelAtPeriodEnd 
               confirmLabel="Cancel subscription" destructive
               onConfirm={async () => {
                 const r = await cancelSubscription();
-                r.success ? toast.success("Cancellation scheduled for the end of the period.") : toast.error(r.error);
+                if (r.success) {
+                  toast.success("Cancellation scheduled for the end of the period.");
+                } else {
+                  toast.error(r.error);
+                }
               }}
             />
           </>

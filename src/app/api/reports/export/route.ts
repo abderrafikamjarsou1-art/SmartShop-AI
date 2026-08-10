@@ -4,6 +4,8 @@ import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { requireRole } from "@/lib/tenant";
 import { reportService } from "@/services/report-service";
 import { expenseService } from "@/services/expense-service";
+import { productService } from "@/services/product-service";
+import { inventoryService } from "@/services/inventory-service";
 import { reportExportSchema } from "@/lib/validation/expense";
 import { toCsv } from "@/lib/csv";
 import { isApiError } from "@/lib/errors";
@@ -122,6 +124,23 @@ async function buildRows(ctx: Awaited<ReturnType<typeof requireRole>>, report: s
         })),
       };
     }
+    // Point-in-time reports (not period-scoped — current stock state, same
+    // as the web Inventory tab's own numbers): reuse productService/
+    // inventoryService as-is, no new aggregation logic.
+    case "low-stock": {
+      const { items } = await productService.list(ctx, {
+        page: 1, perPage: 500, stock: "low", deleted: false, sortBy: "quantity", sortDir: "asc",
+      });
+      return {
+        title: "Low stock",
+        rows: items.map((p) => ({
+          name: p.name, sku: p.sku ?? "", category: p.category?.name ?? "",
+          quantity: p.quantity, minimumStock: p.minimumStock,
+        })),
+      };
+    }
+    case "inventory-valuation":
+      return { title: "Inventory valuation", rows: await inventoryService.getExportRows(ctx, "stock") };
     default: return { title: report, rows: [] };
   }
 }

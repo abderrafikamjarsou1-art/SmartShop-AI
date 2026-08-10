@@ -8,7 +8,6 @@ import { searchPosProducts, searchCustomers, createSale } from "@/actions/sales"
 import { computeTotals, computeChange, round2 } from "@/lib/sale-math";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";

@@ -1,20 +1,4 @@
-// =====================================================
-// e2e/auth.setup.ts — logs in once, saves storage state
-// =====================================================
-import { test as setup, expect } from "@playwright/test";
-
-setup("authenticate as owner", async ({ page }) => {
-  await page.goto("/login");
-  await page.getByLabel(/email/i).fill(process.env.E2E_OWNER_EMAIL!);
-  await page.getByLabel(/password/i).fill(process.env.E2E_OWNER_PASSWORD!);
-  await page.getByRole("button", { name: /sign in|login/i }).click();
-  await expect(page).toHaveURL(/dashboard/);
-  await page.context().storageState({ path: "e2e/.auth/owner.json" });
-});
-
-// =====================================================
 // e2e/pos.spec.ts — THE money path, end to end
-// =====================================================
 import { test, expect } from "@playwright/test";
 
 test.describe("POS sale lifecycle", () => {
@@ -57,46 +41,5 @@ test.describe("POS sale lifecycle", () => {
     await page.getByLabel(/reason/i).fill("E2E return");
     await page.getByRole("button", { name: /process return/i }).click();
     await expect(page.getByText(/refund/i)).toBeVisible();
-  });
-});
-
-// =====================================================
-// e2e/billing.spec.ts — plan gates are enforced server-side
-// =====================================================
-test.describe("plan enforcement (FREE tenant)", () => {
-  test.use({ storageState: "e2e/.auth/free-owner.json" });
-
-  test("AI page is feature-locked on FREE", async ({ page }) => {
-    await page.goto("/ai");
-    await page.getByLabel(/message/i).fill("How much profit did I make?");
-    await page.keyboard.press("Enter");
-    await expect(page.getByText(/isn't included in the Free plan/i)).toBeVisible();
-  });
-
-  test("billing page shows usage bars and plans", async ({ page }) => {
-    await page.goto("/settings/billing");
-    await expect(page.getByText(/free plan/i)).toBeVisible();
-    await expect(page.getByRole("progressbar").first()).toBeVisible();
-    await expect(page.getByRole("button", { name: /choose pro/i })).toBeEnabled();
-  });
-});
-
-// =====================================================
-// e2e/rbac.spec.ts — a cashier sees a different app
-// =====================================================
-test.describe("RBAC (cashier session)", () => {
-  test.use({ storageState: "e2e/.auth/cashier.json" });
-
-  test("no reports in nav; direct URL is refused", async ({ page }) => {
-    await page.goto("/dashboard");
-    await expect(page.getByRole("link", { name: /reports/i })).toHaveCount(0);
-    await page.goto("/reports");
-    await expect(page.getByText(/permission|forbidden/i)).toBeVisible();
-  });
-
-  test("products are read-only", async ({ page }) => {
-    await page.goto("/products");
-    await expect(page.getByRole("button", { name: /add product/i })).toHaveCount(0);
-    await expect(page.getByRole("checkbox")).toHaveCount(0); // no bulk select
   });
 });

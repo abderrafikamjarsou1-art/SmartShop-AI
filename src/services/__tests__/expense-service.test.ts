@@ -9,6 +9,7 @@ vi.mock("@/lib/prisma", () => {
   return {
     prisma: {
       expense: { findFirst: vi.fn(), findMany: vi.fn(), count: vi.fn(), aggregate: vi.fn() },
+      supplier: { findFirst: vi.fn() },
       $transaction: vi.fn(async (arg: unknown) =>
         typeof arg === "function" ? (arg as (t: typeof tx) => unknown)(tx) : Promise.all(arg as Promise<unknown>[])
       ),
@@ -57,6 +58,49 @@ describe("expenseService.create", () => {
     const data = tx.expense.create.mock.calls[0][0].data;
     expect(data.recurrenceInterval).toBeNull();
     expect(data.nextOccurrence).toBeNull();
+  });
+
+  it("regression (H6): rejects a supplierId that doesn't belong to the tenant", async () => {
+    mocked.supplier.findFirst.mockResolvedValue(null); // not found for this tenant
+
+    await expect(
+      expenseService.create(ctx, {
+        title: "Ads", category: "MARKETING", amount: 300, taxAmount: 0,
+        date: new Date(), attachments: [], isRecurring: false, supplierId: "someone-elses-supplier",
+      })
+    ).rejects.toThrow(/Supplier/);
+
+    expect(mocked.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("allows a supplierId once verified tenant-owned", async () => {
+    mocked.supplier.findFirst.mockResolvedValue({ id: "sup1", name: "Acme" });
+    tx.expense.create.mockResolvedValue({ id: "e1" });
+
+    await expenseService.create(ctx, {
+      title: "Ads", category: "MARKETING", amount: 300, taxAmount: 0,
+      date: new Date(), attachments: [], isRecurring: false, supplierId: "sup1",
+    });
+
+    expect(tx.expense.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ supplierId: "sup1" }) })
+    );
+  });
+});
+
+describe("expenseService.update", () => {
+  it("regression (H6): rejects a supplierId that doesn't belong to the tenant", async () => {
+    mocked.expense.findFirst.mockResolvedValue({ id: "e1", businessId: "biz-1" });
+    mocked.supplier.findFirst.mockResolvedValue(null); // not found for this tenant
+
+    await expect(
+      expenseService.update(ctx, "e1", {
+        title: "Ads", category: "MARKETING", amount: 300, taxAmount: 0,
+        date: new Date(), attachments: [], isRecurring: false, supplierId: "someone-elses-supplier",
+      })
+    ).rejects.toThrow(/Supplier/);
+
+    expect(mocked.$transaction).not.toHaveBeenCalled();
   });
 });
 

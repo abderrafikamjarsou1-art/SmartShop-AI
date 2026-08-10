@@ -1,16 +1,46 @@
 # PHASE 3 — TESTING & COVERAGE
 
+> **Status (production-hardening-v1.1, 2026-08-06):** `AUDIT_REPORT.md`
+> found several claims below didn't match reality. Corrected:
+> - **"CI nightly" / "CI on PR" were both false — no CI existed at
+>   all.** A CI workflow now exists (`.github/workflows/ci.yml`,
+>   `web` + `mobile` jobs) and runs on every push/PR, but it covers
+>   **lint, typecheck, unit tests, build, and `prisma validate` only.**
+>   It does **not** run the concurrency suite (needs a real Postgres,
+>   not provisioned in CI) or Playwright E2E (still can't run — see
+>   below) on any schedule. "CI nightly" and pre-release stress/E2E
+>   runs remain PLANNED, NOT IMPLEMENTED.
+> - **The coverage table below is unverified/aspirational.** No
+>   coverage tool is configured anywhere (`vitest.config.ts` has no
+>   `coverage` block, and the `test:coverage` script this doc's
+>   Commands section references doesn't exist in `package.json`). The
+>   percentages have not been measured by any tool run against this
+>   codebase — treat them as a target, not a fact, until coverage
+>   tooling is actually wired in.
+> - **E2E still cannot run as described.** `scripts/seed-e2e.ts` (see
+>   below) still doesn't exist, and only `e2e/pos.spec.ts` exists as a
+>   physical file — `billing.spec.ts`/`rbac.spec.ts` are `describe`
+>   blocks inside it, not separate files.
+> - **The test suite itself is healthier than at audit time**: was
+>   10/12 files passing, 129/132 tests (billing.test.ts failed to load
+>   entirely; 3 AI tests failed to a cache-isolation bug) — now 12/12
+>   files, 152/152 tests, both root causes fixed with regression
+>   coverage added (see the `test(core)` commit).
+
 ## The pyramid (what runs where, and why)
 
 | Layer | Tool | Count | Runs | Guards |
 |-------|------|-------|------|--------|
 | Pure math | Vitest | 48 tests | every commit, <2s | sale-math, finance formulas, forecast, reorder, CSV, periods |
-| Services (mocked Prisma) | Vitest | 74 tests | every commit | tenant scoping, transactions, business rules, RBAC, AI security |
-| Concurrency (real Postgres) | Vitest + Docker | 3 invariants | CI nightly + pre-release | stock guard, idempotency, sequences under parallel load |
-| E2E | Playwright | 9 flows | CI on PR + pre-release | auth, POS money path, returns, RBAC visibility, plan gates |
-| Stress | k6 | 1 scenario | pre-release | p95 < 400ms on search under 50 VUs |
+| Services (mocked Prisma) | Vitest | 74 tests | every commit (now in CI) | tenant scoping, transactions, business rules, RBAC, AI security |
+| Concurrency (real Postgres) | Vitest + Docker | 3 invariants | manual only — PLANNED for CI/nightly | stock guard, idempotency, sequences under parallel load |
+| E2E | Playwright | 9 flows | manual only — PLANNED for CI, blocked on missing seed script | auth, POS money path, returns, RBAC visibility, plan gates |
+| Stress | k6 | 1 scenario | manual only — PLANNED for pre-release | p95 < 400ms on search under 50 VUs |
 
-## Coverage by module (vitest --coverage, statements)
+## Coverage by module (vitest --coverage, statements) — ASPIRATIONAL, NOT MEASURED
+
+No coverage tool is currently configured; these figures are targets
+from when this table was written, not output from an actual run.
 
 | Area | Coverage | Notes |
 |------|----------|-------|
