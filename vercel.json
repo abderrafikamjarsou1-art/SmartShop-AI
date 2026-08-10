@@ -2,7 +2,7 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
   "regions": ["cdg1"],
-  "buildCommand": "npx prisma migrate deploy && next build",
+  "buildCommand": "npx prisma migrate deploy && next build --webpack",
   "crons": [
     { "path": "/api/cron/recurring-expenses", "schedule": "0 3 * * *" }
   ],
