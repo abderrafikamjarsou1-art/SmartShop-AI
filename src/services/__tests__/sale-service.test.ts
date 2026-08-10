@@ -24,8 +24,8 @@ vi.mock("@/lib/prisma", () => {
     prisma: {
       sale: { findFirst: vi.fn(), findMany: vi.fn(), count: vi.fn(), aggregate: vi.fn() },
       product: { findMany: vi.fn(), findFirst: vi.fn() },
-      customer: { findMany: vi.fn() },
-      $transaction: vi.fn(async (arg: unknown, _opts?: unknown) =>
+      customer: { findMany: vi.fn(), findFirst: vi.fn() },
+      $transaction: vi.fn(async (arg: unknown) =>
         typeof arg === "function" ? (arg as (t: typeof tx) => unknown)(tx) : Promise.all(arg as Promise<unknown>[])
       ),
       $queryRaw: vi.fn().mockResolvedValue([]),
@@ -63,6 +63,7 @@ const baseInput = {
 function armHappyPath() {
   mocked.sale.findFirst.mockResolvedValue(null); // no idempotent hit
   mocked.product.findMany.mockResolvedValue([productA]);
+  mocked.customer.findFirst.mockResolvedValue({ id: "cust-1" }); // customerId belongs to tenant
   tx.product.updateMany.mockResolvedValue({ count: 1 }); // stock guard passes
   tx.sale.findFirst.mockResolvedValue({ saleNumber: 41 });
   tx.sale.create.mockImplementation(async (args: { data: unknown }) => ({
@@ -137,9 +138,26 @@ describe("saleService.create — completed sale", () => {
       ...baseInput, customerId: "22222222-2222-2222-2222-222222222222",
       payments: [{ method: "CASH", amount: 140 }], // total 240 -> 100 open
     });
-    expect(tx.customer.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { outstandingBalance: { increment: 100 } } })
+    expect(mocked.customer.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ id: "22222222-2222-2222-2222-222222222222", businessId: "biz-1" }) })
     );
+    expect(tx.customer.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "22222222-2222-2222-2222-222222222222", businessId: "biz-1" },
+        data: { outstandingBalance: { increment: 100 } },
+      })
+    );
+  });
+
+  it("SECURITY: rejects a customerId that does not belong to the tenant, before any write", async () => {
+    mocked.customer.findFirst.mockResolvedValue(null); // belongs to another business, or doesn't exist
+    await expect(
+      saleService.create(ctx, {
+        ...baseInput, customerId: "33333333-3333-3333-3333-333333333333",
+        payments: [{ method: "CASH", amount: 140 }],
+      })
+    ).rejects.toThrow(/customer/i);
+    expect(mocked.$transaction).not.toHaveBeenCalled();
   });
 
   it("store credit uses an atomic balance guard", async () => {
@@ -164,6 +182,37 @@ describe("saleService.create — completed sale", () => {
     expect(tx.product.updateMany).not.toHaveBeenCalled();
     expect(tx.inventoryMovement.create).not.toHaveBeenCalled();
     expect(tx.invoice.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("saleService.updateDraft", () => {
+  const draftInput = {
+    id: "s1",
+    status: "DRAFT" as const,
+    items: [{ productId: "pa", quantity: 1, discountAmount: 0 }],
+    globalDiscount: 0,
+    payments: [] as { method: "CASH" | "CARD" | "BANK_TRANSFER" | "STORE_CREDIT"; amount: number; reference?: string }[],
+  };
+
+  beforeEach(() => {
+    mocked.sale.findFirst.mockResolvedValue({ id: "s1", businessId: "biz-1", status: "DRAFT" });
+    tx.product.findMany.mockResolvedValue([productA]);
+    tx.sale.update.mockResolvedValue({ id: "s1", status: "DRAFT" });
+  });
+
+  it("SECURITY: rejects a customerId that does not belong to the tenant, before any write", async () => {
+    mocked.customer.findFirst.mockResolvedValue(null);
+    await expect(
+      saleService.updateDraft(ctx, { ...draftInput, customerId: "33333333-3333-3333-3333-333333333333" })
+    ).rejects.toThrow(/customer/i);
+    expect(tx.sale.update).not.toHaveBeenCalled();
+  });
+
+  it("accepts a customerId that belongs to the tenant", async () => {
+    await saleService.updateDraft(ctx, { ...draftInput, customerId: "22222222-2222-2222-2222-222222222222" });
+    expect(tx.sale.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ customerId: "22222222-2222-2222-2222-222222222222" }) })
+    );
   });
 });
 
@@ -215,7 +264,10 @@ describe("saleService.processReturn", () => {
       saleId: "s1", items: [{ saleItemId: "i2", quantity: 1 }], reason: "x", refundMethod: "STORE_CREDIT",
     });
     expect(tx.customer.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { storeCredit: { increment: 99 } } })
+      expect.objectContaining({
+        where: { id: "c1", businessId: "biz-1" },
+        data: { storeCredit: { increment: 99 } },
+      })
     );
   });
 
@@ -263,6 +315,26 @@ describe("saleService.voidSale", () => {
     // Payment mirrored negatively
     expect(tx.salePayment.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ amount: -240 }) })
+    );
+  });
+
+  it("reverses an unpaid customer's outstanding balance, scoped to the tenant", async () => {
+    mocked.sale.findFirst.mockResolvedValue({
+      id: "s1", saleNumber: 42, status: "COMPLETED", customerId: "c1",
+      total: 240, amountPaid: 140, // 100 was left on the customer's outstanding balance
+      items: [{ id: "i1", productId: "pa", quantity: 2, returnedQuantity: 0, product: { name: "Cable" } }],
+      payments: [{ method: "CASH", amount: 140 }],
+    });
+    tx.product.update.mockResolvedValue({ id: "pa", name: "Cable", quantity: 10, minimumStock: 2 });
+    tx.sale.update.mockResolvedValue({ id: "s1", status: "VOIDED" });
+
+    await saleService.voidSale(ctx, "s1", "Cashier error");
+
+    expect(tx.customer.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "c1", businessId: "biz-1" },
+        data: { outstandingBalance: { decrement: 100 } },
+      })
     );
   });
 });

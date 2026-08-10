@@ -1,4 +1,4 @@
-import { Plus, Receipt } from "lucide-react";
+import { Plus } from "lucide-react";
 import { requireBusiness } from "@/lib/tenant";
 import { hasPermission } from "@/lib/permissions";
 import { expenseFilterSchema } from "@/lib/validation/expense";
@@ -53,6 +53,7 @@ export default async function ExpensesPage({
         currency={currency}
         canManage={canManage}
         trashView={filter.deleted}
+        businessId={ctx.businessId}
       />
       <Pagination page={page} totalPages={totalPages} />
     </>

@@ -25,10 +25,6 @@ import type { ReportPeriodInput } from "@/lib/validation/expense";
  *     escape hatch never becomes an injection hatch.
  */
 
-const SOLD_STATUSES = `('COMPLETED','PARTIALLY_RETURNED','RETURNED','VOIDED')`;
-// Note: VOIDED/RETURNED sales contribute 0 net units, so including them
-// is harmless for revenue/COGS and correct for refund analysis.
-
 export const reportService = {
   resolve(input: ReportPeriodInput): ResolvedPeriod {
     return resolvePeriod(input.preset, new Date(),

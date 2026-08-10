@@ -2,6 +2,7 @@ import "server-only";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
+import { syncLowStockAlert } from "@/services/stock-alerts";
 import { ConflictError, NotFoundError, ValidationError } from "@/lib/errors";
 import type { TenantContext } from "@/lib/tenant";
 import type {
@@ -26,6 +27,29 @@ const productInclude = {
 } satisfies Prisma.ProductInclude;
 
 export type ProductWithRelations = Prisma.ProductGetPayload<{ include: typeof productInclude }>;
+
+/**
+ * Verify a categoryId/supplierId belong to the tenant before they're ever
+ * written onto a product. Without this, a client could link a product to
+ * another business's category/supplier row, leaking that row's name (and
+ * id) through every subsequent product read via `productInclude`.
+ */
+async function verifyProductRelations(
+  ctx: TenantContext,
+  categoryId: string | null | undefined,
+  supplierId: string | null | undefined
+) {
+  const [category, supplier] = await Promise.all([
+    categoryId
+      ? prisma.category.findFirst({ where: { id: categoryId, businessId: ctx.businessId, deletedAt: null } })
+      : Promise.resolve(true),
+    supplierId
+      ? prisma.supplier.findFirst({ where: { id: supplierId, businessId: ctx.businessId, deletedAt: null } })
+      : Promise.resolve(true),
+  ]);
+  if (categoryId && !category) throw new NotFoundError("Category");
+  if (supplierId && !supplier) throw new NotFoundError("Supplier");
+}
 
 /** Map Prisma unique-violation into a friendly, field-aware ConflictError. */
 function mapUniqueError(e: unknown): never {
@@ -122,6 +146,7 @@ export const productService = {
   // CREATE — atomic: product + images + INITIAL movement + audit
   // ---------------------------------------------------------------
   async create(ctx: TenantContext, input: CreateProductInput) {
+    await verifyProductRelations(ctx, input.categoryId, input.supplierId);
     try {
       return await prisma.$transaction(async (tx) => {
         const product = await tx.product.create({
@@ -187,6 +212,7 @@ export const productService = {
   // ---------------------------------------------------------------
   async update(ctx: TenantContext, input: UpdateProductInput) {
     const existing = await this.getById(ctx, input.id);
+    await verifyProductRelations(ctx, input.categoryId, input.supplierId);
 
     try {
       return await prisma.$transaction(async (tx) => {
@@ -288,6 +314,7 @@ for (const [i, img] of input.images.entries()) {
       await audit(tx, ctx, "product.adjust_stock", "Product", product.id, {
         from: product.quantity, to: input.newQuantity, reason: input.reason,
       });
+      await syncLowStockAlert(tx, ctx, updated);
       return updated;
     });
   },

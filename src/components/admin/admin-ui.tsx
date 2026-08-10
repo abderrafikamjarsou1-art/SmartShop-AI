@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import {
   adminSuspendBusiness, adminReactivateBusiness, adminSetPlan, adminImpersonate, adminBroadcast,
 } from "@/actions/billing-admin";
-import { SearchInput, Pagination, ConfirmDialog } from "@/components/shared/interactive";
+import { SearchInput, Pagination } from "@/components/shared/interactive";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -49,7 +49,11 @@ export function AdminBusinessTable({ businesses, totalPages }: { businesses: Bus
                 <TableCell>
                   <Select defaultValue={b.plan} onValueChange={(plan) => start(async () => {
                     const r = await adminSetPlan({ businessId: b.id, plan });
-                    r.success ? toast.success(`${b.name} → ${plan}`) : toast.error(r.error);
+                    if (r.success) {
+                      toast.success(`${b.name} → ${plan}`);
+                    } else {
+                      toast.error(r.error);
+                    }
                   })}>
                     <SelectTrigger className="h-8 w-28" aria-label={`Plan for ${b.name}`}><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -74,7 +78,11 @@ export function AdminBusinessTable({ businesses, totalPages }: { businesses: Bus
                     {b.suspended ? (
                       <Button variant="ghost" size="sm" disabled={pending} onClick={() => start(async () => {
                         const r = await adminReactivateBusiness(b.id);
-                        r.success ? toast.success("Reactivated.") : toast.error(r.error);
+                        if (r.success) {
+                          toast.success("Reactivated.");
+                        } else {
+                          toast.error(r.error);
+                        }
                       })}>
                         <RotateCcw className="size-3.5" aria-hidden /> Reactivate
                       </Button>

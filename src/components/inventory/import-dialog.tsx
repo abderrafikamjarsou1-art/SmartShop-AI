@@ -64,7 +64,7 @@ export function ImportDialog() {
         <DialogHeader>
           <DialogTitle>Import stock adjustments</DialogTitle>
           <DialogDescription>
-            CSV with header <code className="rounded bg-secondary px-1">sku,newQuantity,reason</code>. Each row sets a product's stock by SKU.
+            CSV with header <code className="rounded bg-secondary px-1">sku,newQuantity,reason</code>. Each row sets a product&apos;s stock by SKU.
           </DialogDescription>
         </DialogHeader>
 

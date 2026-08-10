@@ -1,6 +1,3 @@
-// =====================================================
-// fixes/rate-limit.ts  ->  src/lib/rate-limit.ts
-// =====================================================
 import { ApiError } from "@/lib/errors";
 
 /**
@@ -37,9 +34,24 @@ setInterval(() => {
   for (const [k, v] of hits) if (v.resetAt < now) hits.delete(k);
 }, 60_000).unref?.();
 
-// =====================================================
-// fixes/origin-check  ->  src/lib/origin-check.ts
-// =====================================================
+/**
+ * Best-effort client IP for rate-limit keys. Vercel/most proxies set
+ * `x-forwarded-for` as `client, proxy1, proxy2` — the first entry is the
+ * original client. Falls back to `x-real-ip`, then a constant bucket
+ * (still rate-limits, just coarsely, if no proxy header is present).
+ */
+export function getClientIp(headers: Headers): string {
+  const forwardedFor = headers.get("x-forwarded-for");
+  if (forwardedFor) {
+    const first = forwardedFor.split(",")[0]?.trim();
+    if (first) return first;
+  }
+
+  const realIp = headers.get("x-real-ip");
+  if (realIp) return realIp;
+
+  return "unknown";
+}
 
 /**
  * CSRF defense for cookie-authed MUTATING route handlers (Server Actions
@@ -61,3 +73,30 @@ export function assertSameOrigin(request: Request) {
 
 // APPLY TO: src/app/api/ai/chat/route.ts (POST) — first line inside try{}.
 // GET handlers and the Stripe webhook (signature-authed) do NOT need it.
+
+/**
+ * CSRF defense for routes that must ALSO serve clients with no Origin/
+ * Referer at all — login/register are hit by the mobile app before it
+ * has a bearer token, so the usual "skip if bearer present" pattern
+ * doesn't apply, and assertSameOrigin's strict "reject if both absent"
+ * behavior would reject legitimate mobile requests outright.
+ *
+ * A genuine cross-origin browser request (the actual CSRF vector, e.g. a
+ * malicious page's `fetch(..., {mode:"no-cors"})`) always carries a real
+ * Origin header that the browser sets and JS cannot forge — so rejecting
+ * ONLY on a present-but-mismatched Origin/Referer still blocks that
+ * attack, while a native client sending neither header is let through.
+ * APPLY TO: src/app/api/auth/{login,register}/route.ts.
+ */
+export function rejectForgedOrigin(request: Request) {
+  const appOrigin = new URL(process.env.NEXT_PUBLIC_APP_URL!).origin;
+  const origin = request.headers.get("origin");
+  const referer = request.headers.get("referer");
+
+  if (origin && origin !== appOrigin) {
+    throw new ApiError("Cross-origin request rejected.", 403, "BAD_ORIGIN", true);
+  }
+  if (!origin && referer && new URL(referer).origin !== appOrigin) {
+    throw new ApiError("Cross-origin request rejected.", 403, "BAD_ORIGIN", true);
+  }
+}

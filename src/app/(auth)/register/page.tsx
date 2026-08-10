@@ -2,7 +2,7 @@
 
 import { useActionState } from "react";
 import Link from "next/link";
-import { register, testAction } from "@/actions/auth";
+import { register } from "@/actions/auth";
 import type { ActionResult } from "@/lib/safe-action";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

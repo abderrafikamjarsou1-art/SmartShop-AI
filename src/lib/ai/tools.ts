@@ -1,5 +1,5 @@
 import "server-only";
-import { z, type ZodIssue } from "zod";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { hasPermission, type Permission } from "@/lib/permissions";
@@ -49,12 +49,19 @@ interface ToolDef<S extends z.ZodTypeAny = z.ZodTypeAny> {
   handler: (ctx: TenantContext, args: z.infer<S>) => Promise<unknown>;
 }
 
-function tool<S extends z.ZodTypeAny>(def: ToolDef<S>): ToolDef<S> { return def; }
+// ToolDef<S> is invariant in S (S appears in both `schema` and, via
+// z.infer<S>, the `handler` parameter), so a heterogeneous array can't be
+// typed ToolDef<SomeConcreteSchema>[]. Each call site below is still fully
+// checked against its own concrete schema; only the return type is erased
+// to the common bound so TOOLS can hold every tool without `any`.
+function tool<S extends z.ZodTypeAny>(def: ToolDef<S>): ToolDef<z.ZodTypeAny> {
+  return def as unknown as ToolDef<z.ZodTypeAny>;
+}
 
 // Truncate big tool results before they reach the context window
 const MAX_RESULT_CHARS = 6000;
 
-export const TOOLS: ToolDef<any>[] = [
+export const TOOLS: ToolDef<z.ZodTypeAny>[] = [
   tool({
     name: "getDashboardSummary",
     description: "Today's headline numbers: sales count, gross sales, profit, margin, refunds, best sellers, cash drawer by payment method.",
@@ -292,6 +299,16 @@ const cache = new Map<string, { value: string; expires: number }>();
 const CACHE_TTL_MS = 60_000;
 
 /**
+ * Test-only: clears the module-level tool cache. Without this, tests that
+ * run after another test has populated a cache key for the same
+ * businessId+tool+args would silently hit stale data instead of exercising
+ * the code under test.
+ */
+export function _clearToolCacheForTests(): void {
+  cache.clear();
+}
+
+/**
  * Execute a tool call coming FROM THE MODEL. Validates permission,
  * validates args (stripping injected keys), caches, audit-logs.
  * Returns a JSON string ready for the model, truncated for cost control.
@@ -305,38 +322,46 @@ export async function executeTool(ctx: TenantContext, name: string, rawArgs: unk
   }
 
   const parsed = def.schema.safeParse(rawArgs ?? {});
-if (!parsed.success) {
-  return JSON.stringify({
-    error: "Invalid arguments.",
-    details: parsed.error.issues.map((issue: { message: string }) => issue.message),
-  });
-}
+  if (!parsed.success) {
+    return JSON.stringify({
+      error: "Invalid arguments.",
+      details: parsed.error.issues.map((issue: { message: string }) => issue.message),
+    });
+  }
 
   const cacheKey = `${ctx.businessId}:${name}:${JSON.stringify(parsed.data)}`;
-  const hit = cache.get(cacheKey);
-  if (hit && hit.expires > Date.now()) return hit.value;
-
   const started = Date.now();
-  try {
-    const result = await def.handler(ctx, parsed.data);
-    let json = JSON.stringify(result, (_k, v) => (typeof v === "bigint" ? Number(v) : v));
-    if (json.length > MAX_RESULT_CHARS) json = json.slice(0, MAX_RESULT_CHARS) + `…(truncated)`;
+  const hit = cache.get(cacheKey);
+  const cached = Boolean(hit && hit.expires > Date.now());
 
-    // AUDIT: every AI data access is logged like any other action
-    await prisma.auditLog.create({
-      data: {
-        businessId: ctx.businessId, userId: ctx.user.id,
-        action: `ai.tool.${name}`, entity: "AiTool", entityId: null,
-        metadata: { args: parsed.data as object, ms: Date.now() - started },
-      },
-    });
-
-    cache.set(cacheKey, { value: json, expires: Date.now() + CACHE_TTL_MS });
-    return json;
-  } catch (e) {
-    logger.warn(`AI tool failed: ${name}`, { error: e instanceof Error ? e.message : e });
-    return JSON.stringify({ error: e instanceof Error ? e.message : "Tool failed." });
+  let json: string;
+  if (cached && hit) {
+    json = hit.value;
+  } else {
+    try {
+      const result = await def.handler(ctx, parsed.data);
+      json = JSON.stringify(result, (_k, v) => (typeof v === "bigint" ? Number(v) : v));
+      if (json.length > MAX_RESULT_CHARS) json = json.slice(0, MAX_RESULT_CHARS) + `…(truncated)`;
+      cache.set(cacheKey, { value: json, expires: Date.now() + CACHE_TTL_MS });
+    } catch (e) {
+      // Log the real error server-side; never return internals (stack
+      // traces, connection strings, hostnames) to the model or end user.
+      logger.warn(`AI tool failed: ${name}`, { error: e instanceof Error ? e.message : e });
+      return JSON.stringify({ error: "This tool failed to run. Please try again." });
+    }
   }
+
+  // AUDIT: every successful AI data access is logged, cache hit or not —
+  // a cache hit still means the model read this tenant's data.
+  await prisma.auditLog.create({
+    data: {
+      businessId: ctx.businessId, userId: ctx.user.id,
+      action: `ai.tool.${name}`, entity: "AiTool", entityId: null,
+      metadata: { args: parsed.data as object, ms: Date.now() - started, cached },
+    },
+  });
+
+  return json;
 }
 
 /** Minimal zod -> JSON Schema for our two arg shapes (enum + string). */

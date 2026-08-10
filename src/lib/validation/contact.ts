@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { zUuid, zMoney, zEmail, zRequiredString, zOptionalString, zPagination } from "@/lib/validation";
+import { zUuid, zMoney, zEmail, zRequiredString, zOptionalString, zPagination, zBoolParam } from "@/lib/validation";
 
 /** Customer & Supplier schemas — one file, the shapes rhyme. */
 
@@ -24,7 +24,7 @@ export const customerFilterSchema = zPagination.extend({
   q: z.string().trim().max(100).optional(),  // name / phone / email
   tag: z.string().trim().max(30).optional(),
   balance: z.enum(["all", "owing", "credit"]).default("all"),
-  deleted: z.coerce.boolean().default(false),
+  deleted: zBoolParam,
   sortBy: z.enum(["name", "createdAt", "outstandingBalance"]).default("createdAt"),
   sortDir: z.enum(["asc", "desc"]).default("desc"),
 });
@@ -51,7 +51,7 @@ export const updateSupplierSchema = createSupplierSchema.extend({ id: zUuid });
 
 export const supplierFilterSchema = zPagination.extend({
   q: z.string().trim().max(100).optional(),
-  deleted: z.coerce.boolean().default(false),
+  deleted: zBoolParam,
   sortBy: z.enum(["name", "createdAt"]).default("name"),
   sortDir: z.enum(["asc", "desc"]).default("asc"),
 });

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { zUuid, zMoney, zNonNegativeInt, zRequiredString, zOptionalString, zPagination } from "@/lib/validation";
+import { zUuid, zMoney, zNonNegativeInt, zRequiredString, zOptionalString, zPagination, zBoolParam } from "@/lib/validation";
 
 /**
  * Product schemas — single source of truth for the drawer form (client)
@@ -60,7 +60,7 @@ export const productFilterSchema = zPagination.extend({
   supplierId: zUuid.optional(),
   status: z.enum(["ACTIVE", "INACTIVE", "DISCONTINUED"]).optional(),
   stock: z.enum(["all", "in", "low", "out"]).default("all"),
-  deleted: z.coerce.boolean().default(false), // trash view
+  deleted: zBoolParam, // trash view
   sortBy: z.enum(["name", "sellingPrice", "buyingPrice", "quantity", "createdAt"]).default("createdAt"),
   sortDir: z.enum(["asc", "desc"]).default("desc"),
 });

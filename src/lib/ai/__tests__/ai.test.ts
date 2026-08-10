@@ -51,7 +51,7 @@ vi.mock("@/lib/report-periods", () => ({
   resolvePeriod: vi.fn((p: string) => ({ from: new Date(0), to: new Date(), label: p })),
 }));
 
-import { executeTool, toolDefinitionsFor, TOOLS } from "@/lib/ai/tools";
+import { executeTool, toolDefinitionsFor, TOOLS, _clearToolCacheForTests } from "@/lib/ai/tools";
 import { linearForecast, computeReorder } from "@/lib/ai/forecast";
 import { ForbiddenError } from "@/lib/errors";
 import type { TenantContext } from "@/lib/tenant";
@@ -59,7 +59,13 @@ import type { TenantContext } from "@/lib/tenant";
 const owner = { businessId: "biz-1", role: "OWNER", user: { id: "u1" }, business: { id: "biz-1", currency: "MAD", name: "Shop" } } as unknown as TenantContext;
 const cashier = { ...owner, role: "CASHIER" } as TenantContext;
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  // The tool cache is a module-level singleton keyed by businessId+tool+args,
+  // so without clearing it here, a call in one test can serve a stale cache
+  // hit to the next test that exercises the same tool with the same args.
+  _clearToolCacheForTests();
+});
 
 describe("tool registry — permissions", () => {
   it("every tool declares a permission", () => {
@@ -104,12 +110,17 @@ describe("tool registry — tenant isolation & prompt injection", () => {
     expect(JSON.parse(result).error).toMatch(/Unknown tool/);
   });
 
-  it("tool errors return a safe message, never a stack trace", async () => {
+  it("tool errors return a safe message, never the raw exception", async () => {
     getTodayReport.mockRejectedValueOnce(new Error("connect ECONNREFUSED 10.0.0.5:5432"));
     const result = await executeTool(owner, "getDashboardSummary", {});
     const parsed = JSON.parse(result);
-    expect(parsed.error).toBeDefined();
-    expect(result).not.toContain("10.0.0.5"); // handled: message only, logged server-side
+    // Regression: executeTool used to return e.message verbatim, which
+    // could leak internal details (hostnames, connection strings) straight
+    // into the model's context. It must always return the same generic,
+    // user-safe string — the real message only ever reaches logger.warn.
+    expect(parsed.error).toBe("This tool failed to run. Please try again.");
+    expect(result).not.toContain("10.0.0.5");
+    expect(result).not.toContain("ECONNREFUSED");
   });
 
   it("every successful call is audit-logged with ai.tool.* action", async () => {
@@ -117,7 +128,9 @@ describe("tool registry — tenant isolation & prompt injection", () => {
     await executeTool(owner, "getDashboardSummary", {});
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((prisma as any).auditLog.create).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ action: "ai.tool.getDashboardSummary" }) })
+      expect.objectContaining({
+        data: expect.objectContaining({ action: "ai.tool.getDashboardSummary", metadata: expect.objectContaining({ cached: false }) }),
+      })
     );
   });
 
@@ -125,6 +138,27 @@ describe("tool registry — tenant isolation & prompt injection", () => {
     await executeTool(owner, "getDashboardSummary", {});
     await executeTool(owner, "getDashboardSummary", {});
     expect(getTodayReport).toHaveBeenCalledTimes(1);
+  });
+
+  it("regression: a cache hit is still audit-logged", async () => {
+    const { prisma } = await import("@/lib/prisma");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const auditCreate = (prisma as any).auditLog.create;
+
+    await executeTool(owner, "getDashboardSummary", {}); // fresh: caches the result
+    await executeTool(owner, "getDashboardSummary", {}); // cache hit
+
+    // Both calls read this tenant's data and both must be audited — the
+    // audit log used to sit after the cache's early return, so a repeated
+    // identical call was silently unaudited despite the module's own doc
+    // comment claiming "every execution is audit-logged".
+    expect(auditCreate).toHaveBeenCalledTimes(2);
+    expect(auditCreate).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        data: expect.objectContaining({ action: "ai.tool.getDashboardSummary", metadata: expect.objectContaining({ cached: true }) }),
+      })
+    );
   });
 });
 

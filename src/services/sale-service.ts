@@ -34,6 +34,20 @@ const saleInclude = {
 
 export type SaleWithRelations = Prisma.SaleGetPayload<{ include: typeof saleInclude }>;
 
+/**
+ * Verify a customerId belongs to the tenant before it's ever written onto
+ * a sale. This is the ONE entry point — close it here and every
+ * downstream customer-balance write (voidSale, processReturn) that reads
+ * customerId back off an already tenant-scoped sale row is safe by
+ * construction, without needing to re-verify at every call site.
+ */
+async function verifySaleCustomer(ctx: TenantContext, customerId: string) {
+  const customer = await prisma.customer.findFirst({
+    where: { id: customerId, businessId: ctx.businessId, deletedAt: null },
+  });
+  if (!customer) throw new NotFoundError("Customer");
+}
+
 export const saleService = {
   // ---------------------------------------------------------------
   // CREATE (draft or completed)
@@ -45,6 +59,8 @@ export const saleService = {
       include: saleInclude,
     });
     if (existing) return existing;
+
+    if (input.customerId) await verifySaleCustomer(ctx, input.customerId);
 
     // Load the cart's products (tenant-scoped) and snapshot prices/costs
     const products = await prisma.product.findMany({
@@ -192,7 +208,7 @@ export const saleService = {
         const remainder = round2(totals.total - amountPaid);
         if (remainder > 0 && input.customerId) {
           await tx.customer.update({
-            where: { id: input.customerId },
+            where: { id: input.customerId, businessId: ctx.businessId },
             data: { outstandingBalance: { increment: remainder } },
           });
         }
@@ -227,6 +243,7 @@ export const saleService = {
   async updateDraft(ctx: TenantContext, input: UpdateDraftInput) {
     const draft = await this.getById(ctx, input.id);
     if (draft.status !== "DRAFT") throw new ValidationError("Only drafts can be edited.");
+    if (input.customerId) await verifySaleCustomer(ctx, input.customerId);
 
     // Rebuild = delete lines + recreate via create()'s logic, atomically.
     // Simplest correct approach: cancel-and-replace inside one transaction.
@@ -323,7 +340,7 @@ export const saleService = {
         });
         if (p.method === "STORE_CREDIT" && sale.customerId) {
           await tx.customer.update({
-            where: { id: sale.customerId },
+            where: { id: sale.customerId, businessId: ctx.businessId },
             data: { storeCredit: { increment: Number(p.amount) } },
           });
         }
@@ -332,7 +349,7 @@ export const saleService = {
       const remainder = round2(Number(sale.total) - Number(sale.amountPaid));
       if (remainder > 0 && sale.customerId) {
         await tx.customer.update({
-          where: { id: sale.customerId },
+          where: { id: sale.customerId, businessId: ctx.businessId },
           data: { outstandingBalance: { decrement: remainder } },
         });
       }
@@ -411,7 +428,7 @@ export const saleService = {
         });
         if (input.refundMethod === "STORE_CREDIT" && sale.customerId) {
           await tx.customer.update({
-            where: { id: sale.customerId },
+            where: { id: sale.customerId, businessId: ctx.businessId },
             data: { storeCredit: { increment: refundTotal } },
           });
         }

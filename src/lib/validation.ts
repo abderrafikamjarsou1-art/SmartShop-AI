@@ -61,6 +61,18 @@ export const zPagination = z.object({
   perPage: z.coerce.number().int().min(1).max(100).default(20),
 });
 
+/**
+ * Boolean query-param coercion. Plain `z.coerce.boolean()` is a footgun
+ * for query strings: `Boolean("false")` is `true`, so a client that
+ * explicitly sends `?flag=false` (rather than omitting the param) gets
+ * `true` back. This only treats the literal string "true" (or a real
+ * boolean true) as true — everything else, including "false", is false.
+ */
+export const zBoolParam = z.preprocess(
+  (v) => (typeof v === "string" ? v === "true" : v),
+  z.boolean().default(false)
+);
+
 // ----------------------------------------------------
 // Auth schemas (used in Step 3 actions)
 // ----------------------------------------------------

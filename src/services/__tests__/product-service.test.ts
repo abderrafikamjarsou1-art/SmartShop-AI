@@ -14,14 +14,15 @@ vi.mock("@/lib/prisma", () => {
     productImage: { deleteMany: vi.fn(), update: vi.fn(), create: vi.fn() },
     inventoryMovement: { create: vi.fn() },
     auditLog: { create: vi.fn() },
+    notification: { findFirst: vi.fn().mockResolvedValue(null), create: vi.fn(), update: vi.fn() },
   };
   return {
     prisma: {
       product: {
         findFirst: vi.fn(), findMany: vi.fn(), count: vi.fn(),
       },
-      category: { findMany: vi.fn() },
-      supplier: { findMany: vi.fn() },
+      category: { findMany: vi.fn(), findFirst: vi.fn() },
+      supplier: { findMany: vi.fn(), findFirst: vi.fn() },
       $transaction: vi.fn(async (arg: unknown) =>
         typeof arg === "function" ? (arg as (t: typeof tx) => unknown)(tx) : Promise.all(arg as Promise<unknown>[])
       ),
@@ -84,6 +85,59 @@ describe("productService.create", () => {
 
     expect(tx.inventoryMovement.create).not.toHaveBeenCalled();
   });
+
+  it("SECURITY: rejects a categoryId that does not belong to the tenant, before any write", async () => {
+    mocked.category.findFirst.mockResolvedValue(null); // belongs to another business, or doesn't exist
+    await expect(
+      productService.create(ctx, {
+        name: "Cable", categoryId: "cat-other-tenant", buyingPrice: 10, sellingPrice: 25, quantity: 0,
+        minimumStock: 0, status: "ACTIVE", allowLoss: false, images: [],
+      })
+    ).rejects.toThrow(NotFoundError);
+    expect(tx.product.create).not.toHaveBeenCalled();
+  });
+
+  it("SECURITY: rejects a supplierId that does not belong to the tenant, before any write", async () => {
+    mocked.supplier.findFirst.mockResolvedValue(null);
+    await expect(
+      productService.create(ctx, {
+        name: "Cable", supplierId: "sup-other-tenant", buyingPrice: 10, sellingPrice: 25, quantity: 0,
+        minimumStock: 0, status: "ACTIVE", allowLoss: false, images: [],
+      })
+    ).rejects.toThrow(NotFoundError);
+    expect(tx.product.create).not.toHaveBeenCalled();
+  });
+
+  it("accepts a categoryId/supplierId that belong to the tenant", async () => {
+    mocked.category.findFirst.mockResolvedValue({ id: "cat-1" });
+    mocked.supplier.findFirst.mockResolvedValue({ id: "sup-1" });
+    tx.product.create.mockResolvedValue({ id: "p1", name: "Cable" });
+
+    await productService.create(ctx, {
+      name: "Cable", categoryId: "cat-1", supplierId: "sup-1", buyingPrice: 10, sellingPrice: 25, quantity: 0,
+      minimumStock: 0, status: "ACTIVE", allowLoss: false, images: [],
+    });
+
+    expect(mocked.category.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ id: "cat-1", businessId: "biz-1" }) })
+    );
+    expect(tx.product.create).toHaveBeenCalled();
+  });
+});
+
+describe("productService.update", () => {
+  it("SECURITY: rejects a categoryId that does not belong to the tenant, before any write", async () => {
+    mocked.product.findFirst.mockResolvedValue({ id: "p1", name: "Cable", sellingPrice: 25, images: [] });
+    mocked.category.findFirst.mockResolvedValue(null);
+
+    await expect(
+      productService.update(ctx, {
+        id: "p1", name: "Cable", categoryId: "cat-other-tenant", buyingPrice: 10, sellingPrice: 25,
+        quantity: 0, minimumStock: 0, status: "ACTIVE", allowLoss: false, images: [],
+      })
+    ).rejects.toThrow(NotFoundError);
+    expect(tx.product.update).not.toHaveBeenCalled();
+  });
 });
 
 describe("productService.getById", () => {
@@ -103,8 +157,8 @@ describe("productService.getById", () => {
 
 describe("productService.adjustStock", () => {
   it("writes an ADJUSTMENT movement with a signed delta", async () => {
-    mocked.product.findFirst.mockResolvedValue({ id: "p1", quantity: 10, images: [] });
-    tx.product.update.mockResolvedValue({ id: "p1", quantity: 4 });
+    mocked.product.findFirst.mockResolvedValue({ id: "p1", quantity: 10, minimumStock: 2, images: [] });
+    tx.product.update.mockResolvedValue({ id: "p1", name: "Widget", quantity: 4, minimumStock: 2 });
 
     await productService.adjustStock(ctx, { id: "p1", newQuantity: 4, reason: "Damaged units" });
 
@@ -115,6 +169,30 @@ describe("productService.adjustStock", () => {
         }),
       })
     );
+  });
+
+  it("regression: raises a LOW_STOCK alert when a manual adjustment drops quantity to/below minimumStock (mirrors sale/purchase behavior)", async () => {
+    mocked.product.findFirst.mockResolvedValue({ id: "p1", quantity: 10, minimumStock: 5, images: [] });
+    tx.product.update.mockResolvedValue({ id: "p1", name: "Widget", quantity: 3, minimumStock: 5 });
+    tx.notification.findFirst.mockResolvedValue(null);
+
+    await productService.adjustStock(ctx, { id: "p1", newQuantity: 3, reason: "Recount" });
+
+    expect(tx.notification.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ type: "LOW_STOCK", businessId: "biz-1" }),
+      })
+    );
+  });
+
+  it("does not raise a duplicate LOW_STOCK alert if one is already open for this product", async () => {
+    mocked.product.findFirst.mockResolvedValue({ id: "p1", quantity: 10, minimumStock: 5, images: [] });
+    tx.product.update.mockResolvedValue({ id: "p1", name: "Widget", quantity: 3, minimumStock: 5 });
+    tx.notification.findFirst.mockResolvedValue({ id: "existing-alert" });
+
+    await productService.adjustStock(ctx, { id: "p1", newQuantity: 3, reason: "Recount" });
+
+    expect(tx.notification.create).not.toHaveBeenCalled();
   });
 
   it("rejects a no-op adjustment", async () => {

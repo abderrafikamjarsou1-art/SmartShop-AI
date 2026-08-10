@@ -40,7 +40,12 @@ export function PurchaseActions({ purchase }: { purchase: PoForActions }) {
         {purchase.status === "DRAFT" && (
           <Button className="w-full justify-start" onClick={() => start(async () => {
             const r = await sendPurchase(purchase.id);
-            r.success ? (toast.success("PO marked as ordered."), router.refresh()) : toast.error(r.error);
+            if (r.success) {
+              toast.success("PO marked as ordered.");
+              router.refresh();
+            } else {
+              toast.error(r.error);
+            }
           })}>
             <Send className="size-4" aria-hidden /> Send / mark ordered
           </Button>
@@ -66,7 +71,12 @@ export function PurchaseActions({ purchase }: { purchase: PoForActions }) {
           confirmLabel="Cancel order" destructive
           onConfirm={async () => {
             const r = await cancelPurchase(purchase.id);
-            r.success ? (toast.success("Purchase order cancelled."), router.refresh()) : toast.error(r.error);
+            if (r.success) {
+              toast.success("Purchase order cancelled.");
+              router.refresh();
+            } else {
+              toast.error(r.error);
+            }
           }}
         />
       </CardContent>
@@ -118,7 +128,7 @@ function ReceiveDialog({ purchase, open, onOpenChange, onDone }: {
         <div className="flex items-center justify-between rounded-lg border px-4 py-3">
           <div>
             <Label htmlFor="updateCost">Update product costs</Label>
-            <p className="text-xs text-muted-foreground">Copy this order's unit costs to the products.</p>
+            <p className="text-xs text-muted-foreground">Copy this order&apos;s unit costs to the products.</p>
           </div>
           <Switch id="updateCost" checked={updateCost} onCheckedChange={setUpdateCost} />
         </div>

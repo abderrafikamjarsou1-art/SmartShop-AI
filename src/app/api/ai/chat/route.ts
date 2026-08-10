@@ -5,6 +5,8 @@ import { zUuid } from "@/lib/validation";
 import { aiService } from "@/services/ai-service";
 import { isApiError } from "@/lib/errors";
 import { logger } from "@/lib/logger";
+import { assertSameOrigin } from "@/lib/rate-limit";
+import { extractBearerToken } from "@/lib/auth-bearer";
 
 /**
  * POST /api/ai/chat — streams the assistant's reply as SSE.
@@ -41,6 +43,13 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    // CSRF defense for the cookie-authed web client. Mobile clients send
+    // `Authorization: Bearer <token>` instead of a cookie and never set
+    // Origin/Referer, so they're exempt — there's no session to forge.
+    if (!extractBearerToken(request.headers.get("authorization"))) {
+      assertSameOrigin(request);
+    }
+
     const ctx = await requireRole("ai:use");
     const { conversationId, message } = bodySchema.parse(await request.json());
 

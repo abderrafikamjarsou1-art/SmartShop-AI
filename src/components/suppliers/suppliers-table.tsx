@@ -56,7 +56,11 @@ export function SuppliersTable({ suppliers, trashView }: { suppliers: SupplierRo
                     <Button variant="ghost" size="icon" aria-label={`Restore ${s.name}`}
                       onClick={() => start(async () => {
                         const r = await restoreSupplier(s.id);
-                        r.success ? toast.success("Supplier restored.") : toast.error(r.error);
+                        if (r.success) {
+                          toast.success("Supplier restored.");
+                        } else {
+                          toast.error(r.error);
+                        }
                       })}>
                       <RotateCcw className="size-4" />
                     </Button>
@@ -79,7 +83,11 @@ export function SuppliersTable({ suppliers, trashView }: { suppliers: SupplierRo
         onConfirm={async () => {
           if (!deleteTarget) return;
           const r = await deleteSupplier(deleteTarget.id);
-          r.success ? toast.success("Supplier moved to trash.") : toast.error(r.error);
+          if (r.success) {
+            toast.success("Supplier moved to trash.");
+          } else {
+            toast.error(r.error);
+          }
           setDeleteTarget(null);
         }}
       />
