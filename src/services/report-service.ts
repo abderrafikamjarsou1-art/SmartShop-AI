@@ -53,12 +53,39 @@ const previous = await this.rawFinancials(
     const prev = deriveFinancials(previous);
     return {
       summary,
+      // Additive — lets callers (e.g. the reports summary route) derive
+      // previous-period comparisons like average-order-value delta
+      // without re-running rawFinancials. Existing destructuring callers
+      // that only take {summary, deltas} are unaffected.
+      previousSummary: prev,
       deltas: {
         netRevenue: delta(summary.netRevenue, prev.netRevenue),
         grossProfit: delta(summary.grossProfit, prev.grossProfit),
         netProfit: delta(summary.netProfit, prev.netProfit),
         expenses: delta(summary.operatingExpenses, prev.operatingExpenses),
       },
+    };
+  },
+
+  // ---------------------------------------------------------------
+  // ORDER KPIs (order count / distinct customers / returns) for a range
+  // ---------------------------------------------------------------
+  async getOrderKpis(ctx: TenantContext, from: Date, to: Date) {
+    const bid = ctx.businessId;
+    const [row] = await prisma.$queryRaw<[{ orderCount: number; customerCount: number; returnsCount: number }]>`
+      SELECT
+        COUNT(*)::int AS "orderCount",
+        COUNT(DISTINCT s."customerId")::int AS "customerCount",
+        COUNT(*) FILTER (WHERE s.status IN ('PARTIALLY_RETURNED','RETURNED'))::int AS "returnsCount"
+      FROM sales s
+      WHERE s."businessId" = ${bid}::uuid
+        AND s."createdAt" >= ${from} AND s."createdAt" < ${to}
+        AND s.status IN ('COMPLETED','PARTIALLY_RETURNED','RETURNED')
+    `;
+    return {
+      orderCount: row.orderCount,
+      customerCount: row.customerCount,
+      returnsCount: row.returnsCount,
     };
   },
 
