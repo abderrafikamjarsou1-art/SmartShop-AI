@@ -140,6 +140,7 @@ const previous = await this.rawFinancials(
         where: { businessId: bid, status: { in: ["COMPLETED", "PARTIALLY_RETURNED", "RETURNED"] } },
         select: {
           id: true, saleNumber: true, total: true, paymentStatus: true, createdAt: true,
+          customerId: true,
           customer: { select: { name: true } },
           _count: { select: { items: true } },
         },
@@ -183,6 +184,7 @@ const previous = await this.rawFinancials(
       recentSales: recent.map((s) => ({
         id: s.id,
         number: `S-${String(s.saleNumber).padStart(4, "0")}`,
+        customerId: s.customerId,
         customer: s.customer?.name ?? "Walk-in",
         total: Number(s.total),
         items: s._count.items,

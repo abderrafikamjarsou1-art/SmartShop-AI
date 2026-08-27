@@ -34,7 +34,7 @@ const homePayload = {
   stats: { todaySales: 100, monthSales: 2000, profit: 500, expenses: 200, inventoryValue: 5000 },
   monthlySeries: [{ month: "Jan", revenue: 1000, profit: 200 }],
   weeklySeries: [{ day: "Mon", sales: 3 }],
-  recentSales: [{ id: "s1", number: "S-0001", customer: "Walk-in", total: 50, items: 2, createdAt: "2026-01-01T00:00:00.000Z", paymentStatus: "PAID" }],
+  recentSales: [{ id: "s1", number: "S-0001", customerId: null, customer: "Walk-in", total: 50, items: 2, createdAt: "2026-01-01T00:00:00.000Z", paymentStatus: "PAID" }],
   lowStock: [{ id: "p1", name: "Cable", sku: "C1", quantity: 2, minimum: 5 }],
 };
 
