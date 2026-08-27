@@ -27,6 +27,7 @@ export async function GET() {
           businessId: ctx.businessId,
           businessName: ctx.businessName,
           businessCurrency: ctx.businessCurrency,
+          businessTaxRate: ctx.businessTaxRate,
         },
       },
       { status: 200 }

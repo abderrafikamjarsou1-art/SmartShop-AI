@@ -23,7 +23,7 @@ describe("GET /api/auth/me", () => {
     vi.mocked(requireApiAuth).mockResolvedValue({
       userId: "user-1", email: "owner@b.com", fullName: "Owner", avatarUrl: null,
       isSuperAdmin: false, role: "OWNER", businessId: "biz-1",
-      businessName: "Shop", businessCurrency: "MAD",
+      businessName: "Shop", businessCurrency: "MAD", businessTaxRate: 20,
     });
 
     const response = await GET();
@@ -39,7 +39,7 @@ describe("GET /api/auth/me", () => {
     vi.mocked(requireApiAuth).mockResolvedValue({
       userId: "user-1", email: "cashier@b.com", fullName: "Cashier", avatarUrl: null,
       isSuperAdmin: false, role: "CASHIER", businessId: "biz-1",
-      businessName: "Casa Phone Store", businessCurrency: "MAD",
+      businessName: "Casa Phone Store", businessCurrency: "MAD", businessTaxRate: 20,
     });
 
     const response = await GET();
@@ -49,11 +49,24 @@ describe("GET /api/auth/me", () => {
     expect(body.user.businessCurrency).toBe("MAD");
   });
 
+  it("includes the business tax rate — POS needs it to show/charge the same tax-inclusive total the server computes", async () => {
+    vi.mocked(requireApiAuth).mockResolvedValue({
+      userId: "user-1", email: "cashier@b.com", fullName: "Cashier", avatarUrl: null,
+      isSuperAdmin: false, role: "CASHIER", businessId: "biz-1",
+      businessName: "Casa Phone Store", businessCurrency: "MAD", businessTaxRate: 20,
+    });
+
+    const response = await GET();
+    const body = await response.json();
+
+    expect(body.user.businessTaxRate).toBe(20);
+  });
+
   it("returns null role/businessId for a user with no business yet (onboarding), not an error", async () => {
     vi.mocked(requireApiAuth).mockResolvedValue({
       userId: "user-2", email: "new@b.com", fullName: null, avatarUrl: null,
       isSuperAdmin: false, role: null, businessId: null,
-      businessName: null, businessCurrency: null,
+      businessName: null, businessCurrency: null, businessTaxRate: null,
     });
 
     const response = await GET();

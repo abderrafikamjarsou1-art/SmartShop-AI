@@ -133,6 +133,45 @@ describe("saleService.create — completed sale", () => {
     ).rejects.toThrow(ValidationError);
   });
 
+  // REGRESSION (real-device checkout failure): mobile priced this exact
+  // product ($12.99) but never sent taxRate, so the server fell back to
+  // the business's real 20% rate, computed total 15.59, and correctly
+  // rejected the subtotal-only $12.99 payment as an unpaid walk-in
+  // balance. The fix is mobile computing/sending the tax-inclusive total
+  // — these cases prove the server side of that contract, both ways.
+  describe("walk-in + tax contract (decimal prices, explicit client taxRate)", () => {
+    const productBan = { id: "pban", name: "Ban", sku: null, sellingPrice: 12.99, buyingPrice: 5, quantity: 973 };
+    const banInput = {
+      ...baseInput,
+      items: [{ productId: "pban", quantity: 1, discountAmount: 0 }],
+      taxRate: 20,
+    };
+
+    it("CASE 1/3: exact full payment for a decimal price + tax succeeds (no float false-rejection)", async () => {
+      mocked.product.findMany.mockResolvedValue([productBan]);
+      await expect(
+        saleService.create(ctx, { ...banInput, payments: [{ method: "CASH", amount: 15.59 }] })
+      ).resolves.toBeDefined();
+    });
+
+    it("CASE 4: the client-supplied taxRate produces the exact persisted subtotal/tax/total the mobile total must match", async () => {
+      mocked.product.findMany.mockResolvedValue([productBan]);
+      await saleService.create(ctx, { ...banInput, payments: [{ method: "CASH", amount: 15.59 }] });
+      const created = tx.sale.create.mock.calls[0][0].data;
+      expect(created.subtotal).toBe(12.99);
+      expect(created.taxAmount).toBe(2.6);
+      expect(created.total).toBe(15.59);
+      expect(created.amountPaid).toBe(15.59);
+    });
+
+    it("CASE 2: a genuinely underpaid walk-in sale (subtotal only, missing the tax portion) is still rejected", async () => {
+      mocked.product.findMany.mockResolvedValue([productBan]);
+      await expect(
+        saleService.create(ctx, { ...banInput, payments: [{ method: "CASH", amount: 12.99 }] })
+      ).rejects.toThrow(ValidationError);
+    });
+  });
+
   it("unpaid remainder goes to the customer's outstanding balance", async () => {
     await saleService.create(ctx, {
       ...baseInput, customerId: "22222222-2222-2222-2222-222222222222",

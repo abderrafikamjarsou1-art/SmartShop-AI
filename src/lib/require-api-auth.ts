@@ -26,6 +26,11 @@ export interface ApiAuthContext {
    * data, not editable business configuration. */
   businessName: string | null;
   businessCurrency: string | null;
+  /** Read-only display data (like businessName/businessCurrency above) — the
+   * POS needs this to compute the same tax-inclusive total the server will
+   * authoritatively compute in saleService.create, so a full-cash payment
+   * for the displayed total never falls short once tax is applied. */
+  businessTaxRate: number | null;
 }
 
 /**
@@ -56,5 +61,6 @@ export async function requireApiAuth(): Promise<ApiAuthContext> {
     businessId: tenant?.businessId ?? null,
     businessName: tenant?.business.name ?? null,
     businessCurrency: tenant?.business.currency ?? null,
+    businessTaxRate: tenant ? Number(tenant.business.taxRate) : null,
   };
 }
