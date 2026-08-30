@@ -31,10 +31,10 @@ const ctx = {
 } as never;
 
 const homePayload = {
-  stats: { todaySales: 100, monthSales: 2000, profit: 500, expenses: 200, inventoryValue: 5000 },
+  stats: { todaySales: 100, monthSales: 2000, profit: 500, expenses: 200, inventoryValue: 5000, monthOrderCount: 12, monthUnitsSold: 34 },
   monthlySeries: [{ month: "Jan", revenue: 1000, profit: 200 }],
   weeklySeries: [{ day: "Mon", sales: 3 }],
-  recentSales: [{ id: "s1", number: "S-0001", customerId: null, customer: "Walk-in", total: 50, items: 2, createdAt: "2026-01-01T00:00:00.000Z", paymentStatus: "PAID" }],
+  recentSales: [{ id: "s1", number: "S-0001", customerId: null, customer: "Walk-in", total: 50, items: 2, primaryProductName: "Wireless Headphones", createdAt: "2026-01-01T00:00:00.000Z", paymentStatus: "PAID" }],
   lowStock: [{ id: "p1", name: "Cable", sku: "C1", quantity: 2, minimum: 5 }],
 };
 
@@ -93,7 +93,7 @@ describe("GET /api/dashboard", () => {
     vi.mocked(requireBusiness).mockResolvedValue(ctx);
     vi.mocked(reportService.resolve).mockReturnValue({} as never);
     vi.mocked(reportService.getHomeDashboard).mockResolvedValue({
-      stats: { todaySales: 0, monthSales: 0, profit: 0, expenses: 0, inventoryValue: 0 },
+      stats: { todaySales: 0, monthSales: 0, profit: 0, expenses: 0, inventoryValue: 0, monthOrderCount: 0, monthUnitsSold: 0 },
       monthlySeries: [],
       weeklySeries: [],
       recentSales: [],

@@ -67,9 +67,15 @@ const previous = await this.rawFinancials(
     };
   },
 
-  // ---------------------------------------------------------------
-  // ORDER KPIs (order count / distinct customers / returns) for a range
-  // ---------------------------------------------------------------
+  /**
+   * Order-level KPIs for a period — count, distinct customers, and
+   * returned-sale count. Same eligibility rule as rawFinancials' revenue
+   * query (COMPLETED/PARTIALLY_RETURNED/RETURNED, scoped by the sale's
+   * own createdAt) so these stay internally consistent with revenue.
+   * One aggregate query, set-based like every other report method here.
+   * `COUNT(DISTINCT "customerId")` naturally excludes walk-in sales
+   * (customerId IS NULL) instead of fabricating a customer for them.
+   */
   async getOrderKpis(ctx: TenantContext, from: Date, to: Date) {
     const bid = ctx.businessId;
     const [row] = await prisma.$queryRaw<[{ orderCount: number; customerCount: number; returnsCount: number }]>`
@@ -116,7 +122,7 @@ const previous = await this.rawFinancials(
     const weekFrom = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dow);
     const weekTo = new Date(weekFrom.getTime() + 7 * 86_400_000);
 
-    const [monthSummary, todaySummary, trends, inventory, weekRows, recent, low] = await Promise.all([
+    const [monthSummary, todaySummary, trends, inventory, weekRows, recent, low, monthOrderKpis, monthUnits] = await Promise.all([
       this.getFinancialSummary(ctx, month),
       this.getFinancialSummary(ctx, today),
       this.getTrends(ctx, sevenMonths),
@@ -143,6 +149,15 @@ const previous = await this.rawFinancials(
           customerId: true,
           customer: { select: { name: true } },
           _count: { select: { items: true } },
+          // Additive — the single biggest line item by total stands in as
+          // the sale's "primary product" for the dashboard's recent-sales
+          // summary row (mobile Novexa Dashboard). Doesn't change what
+          // `_count.items` already reports (the full item count).
+          items: {
+            orderBy: { total: "desc" },
+            take: 1,
+            select: { product: { select: { name: true } } },
+          },
         },
         orderBy: { createdAt: "desc" },
         take: 5,
@@ -152,6 +167,21 @@ const previous = await this.rawFinancials(
         FROM products
         WHERE "businessId" = ${bid}::uuid AND "deletedAt" IS NULL AND quantity <= "minimumStock"
         ORDER BY quantity ASC LIMIT 5
+      `,
+      // Additive — current-month completed-order count, reusing the same
+      // already-tested aggregate getOrderKpis() already exposes for the
+      // reports summary route, just scoped to this month's range.
+      this.getOrderKpis(ctx, month.from, month.to),
+      // Additive — current-month net units sold (quantity minus returns),
+      // same eligibility/returns-aware logic as rawFinancials' revenue
+      // query above, just counting units instead of summing line totals.
+      prisma.$queryRaw<[{ units: number }]>`
+        SELECT COALESCE(SUM(i.quantity - i."returnedQuantity"), 0)::int AS units
+        FROM sale_items i
+        JOIN sales s ON s.id = i."saleId"
+        WHERE s."businessId" = ${bid}::uuid
+          AND s."createdAt" >= ${month.from} AND s."createdAt" < ${month.to}
+          AND s.status IN ('COMPLETED','PARTIALLY_RETURNED','RETURNED')
       `,
     ]);
 
@@ -171,6 +201,11 @@ const previous = await this.rawFinancials(
         inventoryValue: inventory[0].value,
         valueAtCost: inventory[0].value,
         valueAtRetail: inventory[0].value,
+        // Additive — current-month order count / net units sold, for the
+        // mobile Novexa Dashboard's Sales/Orders KPI cells. Never used to
+        // change financial totals above.
+        monthOrderCount: monthOrderKpis.orderCount,
+        monthUnitsSold: monthUnits[0].units,
       },
       monthlySeries: trends.map((t) => ({
         month: monthName(new Date(t.bucket)),
@@ -184,10 +219,17 @@ const previous = await this.rawFinancials(
       recentSales: recent.map((s) => ({
         id: s.id,
         number: `S-${String(s.saleNumber).padStart(4, "0")}`,
+        // Additive — lets the client distinguish "no customer" from a real
+        // customer whose name happens to literally be "Walk-in" (the
+        // `customer` string alone can't tell those apart).
         customerId: s.customerId,
         customer: s.customer?.name ?? "Walk-in",
         total: Number(s.total),
         items: s._count.items,
+        // Additive — the sale's biggest line item's product name (or null
+        // for the theoretical edge case of a sale with zero items), for
+        // the mobile Novexa Dashboard's recent-orders summary row.
+        primaryProductName: s.items[0]?.product.name ?? null,
         createdAt: s.createdAt.toISOString(),
         paymentStatus: s.paymentStatus,
       })),
