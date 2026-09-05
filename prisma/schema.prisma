@@ -82,6 +82,36 @@ model UserBusiness {
   @@map("user_businesses")
 }
 
+/// Short-lived, single-use handoff between the browser-based OAuth callback
+/// and the mobile app: the callback (browser context) can't hand a session
+/// straight to the mobile app (native context), so it stores the Supabase
+/// session here (encrypted, never in the deep-link URL) and the app
+/// exchanges the opaque ticket for it via POST /api/auth/oauth/complete.
+/// Rows are deleted on successful consumption (atomic DELETE ... RETURNING)
+/// or by best-effort expiry cleanup — nothing here is meant to persist.
+///
+/// handoffChallenge binds the ticket to the mobile app instance that
+/// actually initiated the OAuth attempt: the app generates a random
+/// handoffVerifier (kept in memory only), sends SHA-256(verifier) as
+/// handoff_challenge to /oauth/start, and this row stores that same
+/// challenge. /oauth/complete requires the raw verifier and only consumes
+/// the row when its hash matches — so intercepting the ticket alone (e.g.
+/// the mobile:// deep link, which isn't an OS-verified HTTPS App Link) is
+/// not enough to redeem it.
+model OAuthHandoffTicket {
+  id                String   @id @default(uuid()) @db.Uuid
+  ticketHash        String   @unique
+  userId            String   @db.Uuid
+  handoffChallenge  String
+  sessionCiphertext String
+  sessionIv         String
+  sessionAuthTag    String
+  ticketExpiresAt   DateTime
+  createdAt         DateTime @default(now())
+
+  @@map("oauth_handoff_tickets")
+}
+
 model Customer {
   id                 String            @id @default(uuid()) @db.Uuid
   businessId         String            @db.Uuid
